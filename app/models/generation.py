@@ -1,0 +1,43 @@
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+from enum import Enum
+from datetime import datetime
+
+class CreativeIntent(str, Enum):
+    GENERATE_IMAGE = "generate_image"
+    GENERATE_VIDEO = "generate_video"
+    EDIT_IMAGE = "edit_image"
+    ENHANCE_IMAGE = "enhance_image"
+
+class QualityPriority(str, Enum):
+    SPEED = "speed"
+    BALANCED = "balanced"
+    QUALITY = "quality"
+
+class GenerationRequest(BaseModel):
+    prompt: str = Field(..., description="User's generation prompt")
+    user_id: str = Field(..., description="User identifier")
+    session_id: Optional[str] = Field(None, description="Conversation/session identifier for tracking working images")
+    intent: Optional[CreativeIntent] = None
+    quality_priority: QualityPriority = QualityPriority.BALANCED
+    uploaded_images: Optional[List[str]] = Field(None, description="URLs of uploaded images")
+    current_working_image: Optional[str] = Field(None, description="URL of the current working image in this session")
+    additional_params: Optional[Dict[str, Any]] = None
+
+class GenerationResponse(BaseModel):
+    success: bool
+    generation_id: str
+    output_url: Optional[str] = None
+    model_used: Optional[str] = None
+    execution_time: Optional[float] = None
+    error_message: Optional[str] = None
+    input_image_used: Optional[str] = Field(None, description="URL of the input image that was edited (for flux-kontext)")
+    image_source_type: Optional[str] = Field(None, description="Source of input image: 'uploaded', 'working_image', or None")
+    metadata: Optional[Dict[str, Any]] = None
+
+class IntentAnalysis(BaseModel):
+    detected_intent: CreativeIntent
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    content_type: str  # "photo", "artwork", "video", etc.
+    complexity_level: str  # "simple", "moderate", "complex"
+    suggested_model: Optional[str] = None 

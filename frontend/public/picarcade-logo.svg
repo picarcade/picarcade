@@ -1,0 +1,20 @@
+<svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .logo-text { font-family: Arial, sans-serif; font-weight: bold; fill: white; }
+      .phone-outline { fill: none; stroke: white; stroke-width: 12; }
+    </style>
+  </defs>
+  
+  <!-- Phone icon with rounded corners -->
+  <rect x="40" y="40" width="140" height="220" rx="25" ry="25" class="phone-outline"/>
+  
+  <!-- Inner "A" -->
+  <text x="110" y="200" class="logo-text" font-size="120" text-anchor="middle">A</text>
+  
+  <!-- "Pic" text -->
+  <text x="250" y="140" class="logo-text" font-size="90">Pic</text>
+  
+  <!-- "Arcade" text -->
+  <text x="250" y="220" class="logo-text" font-size="90">Arcade</text>
+</svg> 
