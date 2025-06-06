@@ -211,15 +211,45 @@ class ReplicateGenerator(BaseGenerator):
                 start_time = time.time()
                 print(f"[DEBUG] Starting replicate.run() at {start_time}")
                 
-                output = replicate.run(model_name, input=inputs)
+                # Video generation takes much longer, so we use async API for better handling
+                print(f"[DEBUG] Using async prediction for video generation...")
+                
+                # Create async prediction
+                prediction = replicate.predictions.create(
+                    model=model_name,
+                    input=inputs
+                )
+                print(f"[DEBUG] Created prediction with ID: {prediction.id}")
+                print(f"[DEBUG] Prediction status: {prediction.status}")
+                
+                # Wait for completion with timeout (max 5 minutes for video)
+                max_wait_time = 300  # 5 minutes
+                poll_interval = 5  # Check every 5 seconds
+                elapsed_time = 0
+                
+                while prediction.status not in ["succeeded", "failed", "canceled"] and elapsed_time < max_wait_time:
+                    print(f"[DEBUG] Waiting for prediction... Status: {prediction.status}, Elapsed: {elapsed_time}s")
+                    time.sleep(poll_interval)
+                    elapsed_time += poll_interval
+                    prediction.reload()
                 
                 end_time = time.time()
                 duration = end_time - start_time
-                print(f"[DEBUG] replicate.run() completed successfully in {duration:.2f} seconds")
-                print(f"[DEBUG] Raw output type: {type(output)}")
-                print(f"[DEBUG] Raw output content: {output}")
+                
+                if prediction.status == "succeeded":
+                    print(f"[DEBUG] Prediction completed successfully in {duration:.2f} seconds")
+                    output = prediction.output
+                    print(f"[DEBUG] Raw output type: {type(output)}")
+                    print(f"[DEBUG] Raw output content: {output}")
+                elif prediction.status == "failed":
+                    print(f"[ERROR] Prediction failed: {prediction.error}")
+                    raise Exception(f"Video generation failed: {prediction.error}")
+                else:
+                    print(f"[ERROR] Prediction timed out after {max_wait_time} seconds")
+                    raise Exception(f"Video generation timed out. Status: {prediction.status}")
+                    
             except Exception as e:
-                print(f"[ERROR] replicate.run() failed: {str(e)}")
+                print(f"[ERROR] Video generation failed: {str(e)}")
                 print(f"[ERROR] Exception type: {type(e)}")
                 import traceback
                 print(f"[ERROR] Full traceback: {traceback.format_exc()}")
