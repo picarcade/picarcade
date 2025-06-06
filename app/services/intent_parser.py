@@ -4,29 +4,38 @@ from app.models.generation import CreativeIntent, IntentAnalysis
 from app.core.logging import intent_logger
 
 """
-Intent Decision Logic Enhancement:
+Intent Decision Logic (Fixed Priority Order):
 
-Priority 1: Session Continuity (NEW!)
-- If there's a current working image in the session → EDIT_IMAGE intent (confidence: 0.98)
-- Enables conversational editing: "add hat" → "make it blue" → "change color"
-- Each generated image becomes the new working image for the session
+Priority 1: Explicit Content Type Requests
+- Video keywords ("video", "animation", "movie") → GENERATE_VIDEO (confidence: 0.9)
+- Overrides session continuity to handle explicit requests correctly
 
-Priority 2: Image Upload Detection
-- If user uploads new images → EDIT_IMAGE intent (confidence: 0.95) 
+Priority 2: Image Upload Detection  
+- If user uploads new images → EDIT_IMAGE intent (confidence: 0.95)
 - Uses flux-kontext model for image editing
 - Uploaded image becomes the new working image
 
-Priority 3: Keyword-Based Detection (existing logic)
-- Video keywords → GENERATE_VIDEO
-- Edit keywords → EDIT_IMAGE  
-- Enhance keywords → ENHANCE_IMAGE
-- Default → GENERATE_IMAGE
+Priority 3: Session Continuity with Explicit Edit Intent
+- Working image + explicit edit keywords → EDIT_IMAGE (confidence: 0.95)
+- Examples: "edit it", "modify this", "change the color"
+
+Priority 4: Session Continuity with Contextual Edit Intent
+- Working image + contextual editing phrases → EDIT_IMAGE (confidence: 0.85)
+- Examples: "make it blue", "add a hat", "turn it into"
+
+Priority 5: General Keyword Detection
+- Edit keywords without context → EDIT_IMAGE (confidence: 0.7)
+- Enhance keywords → ENHANCE_IMAGE (confidence: 0.9)
+
+Priority 6: Default Behavior
+- No clear intent → GENERATE_IMAGE (confidence: 0.6)
+- Even with working image, if no editing context is detected
 
 Example conversation flow:
-1. User uploads hat.jpg + "add sunglasses" → EDIT_IMAGE (flux-kontext) → outputs hat_with_sunglasses.jpg
-2. User says "make it blue" → EDIT_IMAGE (flux-kontext using hat_with_sunglasses.jpg)
-3. User says "add a background" → EDIT_IMAGE (flux-kontext using previous result)
-4. User uploads new cat.jpg + "edit this" → EDIT_IMAGE (flux-kontext using cat.jpg - new session context)
+1. "Create a horse" → GENERATE_IMAGE
+2. "Make a video of it galloping" → GENERATE_VIDEO (NOT edit, despite working image)
+3. "Add a saddle to it" → EDIT_IMAGE (contextual editing)
+4. "Make it blue" → EDIT_IMAGE (contextual editing)
 """
 
 class BasicIntentParser:
@@ -52,6 +61,13 @@ class BasicIntentParser:
             "enhance", "upscale", "improve quality", "make better", 
             "higher resolution", "sharper", "cleaner"
         ]
+        
+        self.audio_keywords = [
+            "audio", "sound", "music", "voice", "narration", "speaking", 
+            "talking", "dialogue", "soundtrack", "song", "singing",
+            "tell us", "says", "excitedly telling", "shouts", "speaks",
+            "announces", "whispers", "screams", "breaking news"
+        ]
     
     async def analyze_intent(self, prompt: str, user_context: Dict[str, Any] = None, generation_id: str = None, uploaded_images: list = None, current_working_image: str = None) -> IntentAnalysis:
         """
@@ -70,26 +86,33 @@ class BasicIntentParser:
         
         prompt_lower = prompt.lower()
         
-        # Priority 1: If there's a current working image in the session, continue editing it
-        # This enables conversational image editing (e.g., "add hat" → "make it blue")
-        if current_working_image:
-            intent = CreativeIntent.EDIT_IMAGE
-            content_type = "image_edit"
-            confidence = 0.98  # Very high confidence for session continuity
+        # Priority 1: Explicit content type requests (video, animation, etc.) - these override session continuity
+        if any(keyword in prompt_lower for keyword in self.video_keywords):
+            intent = CreativeIntent.GENERATE_VIDEO
+            # Check if audio is also requested
+            has_audio_request = any(keyword in prompt_lower for keyword in self.audio_keywords)
+            content_type = "video_with_audio" if has_audio_request else "video"
+            confidence = 0.9  # High confidence for explicit video requests
             
         # Priority 2: If user has uploaded new images, assume they want to edit/adjust them
-        # This uses the flux-kontext model for image editing
         elif uploaded_images and len(uploaded_images) > 0:
             intent = CreativeIntent.EDIT_IMAGE
             content_type = "image_edit"
             confidence = 0.95  # High confidence since images were uploaded
             
-        # Priority 3: Detect intent based on keywords
-        elif any(keyword in prompt_lower for keyword in self.video_keywords):
-            intent = CreativeIntent.GENERATE_VIDEO
-            content_type = "video"
-            confidence = 0.8
+        # Priority 3: Session continuity - if there's a working image AND the prompt suggests editing
+        elif current_working_image and any(keyword in prompt_lower for keyword in self.edit_keywords):
+            intent = CreativeIntent.EDIT_IMAGE
+            content_type = "image_edit"
+            confidence = 0.95  # High confidence for explicit editing of working image
             
+        # Priority 4: Session continuity - working image with ambiguous prompts that could be editing
+        elif current_working_image and self._suggests_editing_context(prompt_lower):
+            intent = CreativeIntent.EDIT_IMAGE
+            content_type = "image_edit"
+            confidence = 0.85  # Lower confidence for ambiguous cases
+            
+        # Priority 5: Other keyword-based detection
         elif any(keyword in prompt_lower for keyword in self.edit_keywords):
             intent = CreativeIntent.EDIT_IMAGE
             content_type = "image_edit"
@@ -101,7 +124,7 @@ class BasicIntentParser:
             confidence = 0.9
             
         else:
-            # Default to image generation
+            # Default to image generation (even if there's a working image, if no editing context is detected)
             intent = CreativeIntent.GENERATE_IMAGE
             content_type = self._detect_image_type(prompt_lower)
             confidence = 0.6
@@ -168,6 +191,42 @@ class BasicIntentParser:
         else:
             return "simple"
     
+    def _suggests_editing_context(self, prompt_lower: str) -> bool:
+        """
+        Check if prompt suggests editing the current working image
+        This catches conversational editing phrases that don't use explicit edit keywords
+        """
+        
+        # Contextual editing phrases that suggest working with current image
+        contextual_edit_indicators = [
+            "make it", "turn it", "change it", "paint it", "color it",
+            "add a", "add some", "add the", "put a", "put some", "put the",
+            "give it", "give them", "give this", "remove the", "take away",
+            "make this", "make that", "turn this", "turn that",
+            "it should", "it needs", "this should", "this needs",
+            "instead of", "but with", "but make", "except",
+            "more", "less", "bigger", "smaller", "brighter", "darker",
+            "different color", "another color", "new color"
+        ]
+        
+        # Pronouns and references that suggest working with existing content
+        contextual_references = [
+            "it ", "this ", "that ", "them ", "these ", "those ",
+            "the image", "the picture", "the photo"
+        ]
+        
+        # Check for contextual editing indicators
+        if any(indicator in prompt_lower for indicator in contextual_edit_indicators):
+            return True
+            
+        # Check for references to existing content combined with modification verbs
+        modification_verbs = ["make", "change", "turn", "paint", "color", "add", "remove"]
+        if any(ref in prompt_lower for ref in contextual_references):
+            if any(verb in prompt_lower for verb in modification_verbs):
+                return True
+        
+        return False
+
     def _suggest_initial_model(self, intent: CreativeIntent, complexity: str) -> str:
         """Basic model suggestion logic"""
         

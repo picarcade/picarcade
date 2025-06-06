@@ -47,6 +47,11 @@ async def generate_content(
             print(f"[DEBUG] API: Auto-generated session_id: {effective_session_id}")
         
         current_working_image = session_manager.get_current_working_image(effective_session_id)
+        print(f"[DEBUG] API: Retrieved working image: {current_working_image}")
+        
+        # Set the working image on the request object for the model router
+        request.current_working_image = current_working_image
+        print(f"[DEBUG] API: Set request.current_working_image: {request.current_working_image}")
         
         # Phase 1: Analyze user intent
         intent_analysis = await intent_parser.analyze_intent(
@@ -67,6 +72,10 @@ async def generate_content(
         # Phase 3: Execute generation
         selected_model = routing_decision["model"]
         parameters = routing_decision["parameters"]
+        
+        print(f"[DEBUG] API: Router selected model: {selected_model}")
+        print(f"[DEBUG] API: Router parameters: {parameters}")
+        print(f"[DEBUG] API: Router routing reason: {routing_decision.get('routing_reason')}")
         
         # Add images to parameters for image editing (prioritize current working image)
         image_source = None
@@ -94,14 +103,20 @@ async def generate_content(
                 print(f"[ERROR] session_id: {request.session_id}")
         
         # Choose generator based on model
+        print(f"[DEBUG] API: Selecting generator for model: {selected_model}")
+        
         if "runway" in selected_model:
+            print(f"[DEBUG] API: Using RunwayGenerator for {selected_model}")
             generator = runway_generator
-            if intent_analysis.detected_intent.value == "generate_video":
+            # Don't override the type if it was already set by the model router (e.g., "image_to_video")
+            if "type" not in parameters and intent_analysis.detected_intent.value == "generate_video":
                 parameters["type"] = "video"
-        elif "flux" in selected_model or "dall-e" in selected_model:
+        elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model:
+            print(f"[DEBUG] API: Using ReplicateGenerator for {selected_model}")
             generator = replicate_generator
             parameters["model"] = selected_model
         else:
+            print(f"[DEBUG] API: No matching generator found for {selected_model}, falling back to ReplicateGenerator with flux-1.1-pro")
             # Default fallback
             generator = replicate_generator
             parameters["model"] = "flux-1.1-pro"

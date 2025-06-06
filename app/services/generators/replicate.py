@@ -71,6 +71,8 @@ class ReplicateGenerator(BaseGenerator):
                 result = await self._generate_flux_kontext(prompt, parameters)
             elif "flux" in model_name:
                 result = await self._generate_flux(prompt, parameters)
+            elif "google/veo" in model_name or "runway" in model_name:
+                result = await self._generate_video(prompt, parameters)
             else:
                 result = await self._generate_other(prompt, parameters)
             
@@ -171,6 +173,52 @@ class ReplicateGenerator(BaseGenerator):
             }
         return await asyncio.to_thread(sync_call)
     
+    async def _generate_video(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate video using video models on Replicate (e.g., google/veo-3)"""
+        def sync_call():
+            model_name = parameters.get("model", "google/veo-3")
+            
+            # Prepare inputs for video generation
+            inputs = {
+                "prompt": prompt,
+            }
+            
+            # Add model-specific parameters based on actual API schema
+            if "google/veo" in model_name:
+                # Google Veo-3 on Replicate only supports prompt and seed
+                # Based on the actual API schema: {"prompt": string, "seed": integer (optional)}
+                seed = parameters.get("seed")
+                if seed is not None:
+                    inputs["seed"] = seed
+                    
+            elif "runway" in model_name:
+                # Runway specific parameters (if using Replicate endpoint)
+                inputs.update({
+                    "duration": parameters.get("duration", 5),
+                    "ratio": parameters.get("ratio", "1280:720"),
+                    "motion": parameters.get("motion", 3),
+                })
+            
+            print(f"[DEBUG] Replicate video generation with model: {model_name}")
+            print(f"[DEBUG] Video generation inputs: {inputs}")
+            
+            output = replicate.run(model_name, input=inputs)
+            
+            # Extract the video URL - video models typically return direct URLs or lists
+            video_url = self._extract_url(output) if output else None
+            
+            print(f"[DEBUG] Video generation output: {video_url}")
+            
+            return {
+                "output_url": video_url,
+                "metadata": {
+                    "model_version": model_name, 
+                    "inputs": inputs,
+                    "generation_type": "video"
+                }
+            }
+        return await asyncio.to_thread(sync_call)
+
     async def _generate_other(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Generate using other models on Replicate (e.g., DALL-E)"""
         def sync_call():

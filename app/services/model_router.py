@@ -39,14 +39,14 @@ class ModelRouter:
                 "speed": 5,
                 "quality": 9,
                 "cost": 9,
-                "supports": ["generate_video"]
+                "supports": ["generate_video", "image_to_video"]
             },
-            "google_veo2": {
+            "google/veo-3": {
                 "type": "video",
-                "speed": 6,
-                "quality": 8,
-                "cost": 7,
-                "supports": ["generate_video"]
+                "speed": 7,
+                "quality": 9,
+                "cost": 8,
+                "supports": ["generate_video", "generate_video_with_audio"]
             },
             
             # Edit models
@@ -75,24 +75,51 @@ class ModelRouter:
             Routing decision with model and parameters
         """
         
-        # Filter models that support the detected intent
-        compatible_models = self._get_compatible_models(intent_analysis.detected_intent)
+        # Check if we need image-to-video generation
+        # This happens when: video intent + existing image in context
+        effective_intent = intent_analysis.detected_intent
+        has_input_image = (request.uploaded_images and len(request.uploaded_images) > 0) or request.current_working_image
+        
+        print(f"[DEBUG] Router: Intent: {intent_analysis.detected_intent}")
+        print(f"[DEBUG] Router: Current working image: {request.current_working_image}")
+        print(f"[DEBUG] Router: Uploaded images: {request.uploaded_images}")
+        print(f"[DEBUG] Router: Has input image: {has_input_image}")
+        
+        if intent_analysis.detected_intent == "generate_video" and has_input_image:
+            effective_intent = "image_to_video"
+            print(f"[DEBUG] Router: Detected image-to-video generation (video intent + input image)")
+            print(f"[DEBUG] Router: Input image: {request.current_working_image or request.uploaded_images[0] if request.uploaded_images else 'none'}")
+        else:
+            print(f"[DEBUG] Router: No image-to-video detected. Intent: {intent_analysis.detected_intent}, Has image: {has_input_image}")
+        
+        # Filter models that support the effective intent
+        compatible_models = self._get_compatible_models(effective_intent)
+        print(f"[DEBUG] Router: Effective intent: {effective_intent}")
+        print(f"[DEBUG] Router: Compatible models: {list(compatible_models.keys())}")
         
         # Score models based on quality priority and requirements
         scored_models = self._score_models(
             compatible_models, 
             request.quality_priority,
-            intent_analysis.complexity_level
+            intent_analysis.complexity_level,
+            content_type=intent_analysis.content_type
         )
         
+        print(f"[DEBUG] Router: Model scores: {scored_models}")
+        
         # Select best model
+        if not scored_models:
+            raise Exception(f"No compatible models found for intent: {effective_intent}")
+        
         selected_model = max(scored_models.items(), key=lambda x: x[1])
+        print(f"[DEBUG] Router: Selected model: {selected_model[0]} with score: {selected_model[1]}")
         
         # Generate optimized parameters
         parameters = self._generate_parameters(
             selected_model[0], 
             intent_analysis, 
-            request.quality_priority
+            request.quality_priority,
+            effective_intent=effective_intent
         )
         
         # Prepare result
@@ -101,7 +128,7 @@ class ModelRouter:
             "confidence": selected_model[1],
             "parameters": parameters,
             "estimated_time": self._estimate_generation_time(selected_model[0], intent_analysis),
-            "routing_reason": self._explain_routing_decision(selected_model[0], request.quality_priority)
+            "routing_reason": self._explain_routing_decision(selected_model[0], request.quality_priority, effective_intent)
         }
         
         # Log routing decision
@@ -125,7 +152,8 @@ class ModelRouter:
         compatible = {}
         intent_mapping = {
             "generate_image": "generate_image",
-            "generate_video": "generate_video", 
+            "generate_video": "generate_video",
+            "image_to_video": "image_to_video",
             "edit_image": "edit_image",
             "enhance_image": "generate_image"  # Use generation models for enhancement
         }
@@ -141,7 +169,8 @@ class ModelRouter:
     def _score_models(self, 
                      compatible_models: Dict[str, Dict[str, Any]], 
                      quality_priority: QualityPriority,
-                     complexity: str) -> Dict[str, float]:
+                     complexity: str,
+                     content_type: str = None) -> Dict[str, float]:
         """Score models based on user preferences and requirements"""
         
         scores = {}
@@ -171,6 +200,11 @@ class ModelRouter:
             elif complexity == "simple" and capabilities["speed"] >= 7:
                 score += 0.5  # Bonus for fast models on simple tasks
             
+            # Audio capability bonus
+            if content_type == "video_with_audio" and "generate_video_with_audio" in capabilities["supports"]:
+                score += 2.0  # Strong bonus for audio-capable models when audio is requested
+                print(f"[DEBUG] Router: Audio bonus applied to {model_name}, new score: {score}")
+            
             scores[model_name] = score
             
         return scores
@@ -178,7 +212,8 @@ class ModelRouter:
     def _generate_parameters(self, 
                            model: str, 
                            intent_analysis: IntentAnalysis,
-                           quality_priority: QualityPriority) -> Dict[str, Any]:
+                           quality_priority: QualityPriority,
+                           effective_intent: str = None) -> Dict[str, Any]:
         """Generate optimized parameters for the selected model"""
         
         base_params = {}
@@ -216,6 +251,13 @@ class ModelRouter:
                 "motion": 3
             }
             
+            # Special handling for image-to-video
+            if effective_intent == "image_to_video":
+                base_params["type"] = "image_to_video"
+                print(f"[DEBUG] Router: Setting image-to-video parameters for Runway")
+            else:
+                base_params["type"] = "video"
+            
             if quality_priority == QualityPriority.QUALITY:
                 base_params["duration"] = 10
                 base_params["ratio"] = "1920:1080"
@@ -240,7 +282,7 @@ class ModelRouter:
             "flux-1.1-pro-ultra": 45, 
             "dall-e-3": 20,
             "runway_gen4_turbo": 120,
-            "google_veo2": 90,
+            "google/veo-3": 60,  # Veo 3 is faster than Runway
             "flux-kontext": 25
         }
         
@@ -254,7 +296,7 @@ class ModelRouter:
             
         return int(base_time)
     
-    def _explain_routing_decision(self, model: str, quality_priority: QualityPriority) -> str:
+    def _explain_routing_decision(self, model: str, quality_priority: QualityPriority, effective_intent: str = None) -> str:
         """Generate human-readable explanation of routing decision"""
         
         explanations = {
@@ -262,11 +304,16 @@ class ModelRouter:
             "flux-1.1-pro-ultra": "Selected for maximum image quality",
             "dall-e-3": "Selected for creative interpretation",
             "runway_gen4_turbo": "Selected for high-quality video generation",
-            "google_veo2": "Selected for efficient video generation",
+            "google/veo-3": "Selected for advanced video generation with audio support",
             "flux-kontext": "Selected for precise image editing"
         }
         
-        base_explanation = explanations.get(model, f"Selected {model}")
+        # Special handling for image-to-video
+        if effective_intent == "image_to_video" and "runway" in model:
+            base_explanation = "Selected for image-to-video generation"
+        else:
+            base_explanation = explanations.get(model, f"Selected {model}")
+            
         priority_note = f" (optimizing for {quality_priority.value})"
         
         return base_explanation + priority_note 
