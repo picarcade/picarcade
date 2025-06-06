@@ -202,12 +202,35 @@ class ReplicateGenerator(BaseGenerator):
             print(f"[DEBUG] Replicate video generation with model: {model_name}")
             print(f"[DEBUG] Video generation inputs: {inputs}")
             
-            output = replicate.run(model_name, input=inputs)
+            print(f"[DEBUG] About to call replicate.run() with model: {model_name}")
+            print(f"[DEBUG] Replicate API key configured: {bool(self.api_key)}")
+            print(f"[DEBUG] Replicate API key length: {len(self.api_key) if self.api_key else 0}")
+            
+            try:
+                import time
+                start_time = time.time()
+                print(f"[DEBUG] Starting replicate.run() at {start_time}")
+                
+                output = replicate.run(model_name, input=inputs)
+                
+                end_time = time.time()
+                duration = end_time - start_time
+                print(f"[DEBUG] replicate.run() completed successfully in {duration:.2f} seconds")
+                print(f"[DEBUG] Raw output type: {type(output)}")
+                print(f"[DEBUG] Raw output content: {output}")
+            except Exception as e:
+                print(f"[ERROR] replicate.run() failed: {str(e)}")
+                print(f"[ERROR] Exception type: {type(e)}")
+                import traceback
+                print(f"[ERROR] Full traceback: {traceback.format_exc()}")
+                raise
             
             # Extract the video URL - video models typically return direct URLs or lists
+            print(f"[DEBUG] About to extract URL from output...")
             video_url = self._extract_url(output) if output else None
+            print(f"[DEBUG] Extracted video URL: {video_url}")
             
-            print(f"[DEBUG] Video generation output: {video_url}")
+            print(f"[DEBUG] Video generation completed successfully")
             
             return {
                 "output_url": video_url,
