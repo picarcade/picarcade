@@ -1,10 +1,10 @@
 "use client"
 import { useState, useEffect, useRef } from 'react'
-import { History, Wand2, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
+import { History, Wand2, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, ExternalLink, Tag, Trash2, Play } from 'lucide-react'
 import type { GenerationHistoryProps, HistoryItem } from '../types'
 import { getUserHistory } from '../lib/api'
 
-export default function GenerationHistory({ refreshTrigger, userId, onSelectImage }: GenerationHistoryProps) {
+export default function GenerationHistory({ refreshTrigger, userId, onSelectImage, onTagImage, onDeleteItem }: GenerationHistoryProps) {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(0)
@@ -25,7 +25,11 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
     try {
       // Use the API utility function to fetch history with correct base URL
       const historyData = await getUserHistory(userId, 50)
-      setHistory(historyData)
+      // Filter out failed creations - only show successful ones with output URLs
+      const successfulHistory = historyData.filter(item => 
+        item.success === 'success' && item.output_url
+      )
+      setHistory(successfulHistory)
     } catch (error) {
       console.error('Error loading history:', error)
       setHistory([]) // Set empty array on error
@@ -85,13 +89,29 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
     return history.slice(startIndex, startIndex + itemsPerPage)
   }
 
+  const isVideo = (url: string) => {
+    return url.includes('.mp4') || url.includes('video') || url.includes('mock-image-to-video')
+  }
+
   const handleImageClick = (item: HistoryItem) => {
     if (onSelectImage) {
-      // Call the callback to select the image for editing
+      // Call the callback to replace the active image with this one
       onSelectImage(item)
     } else if (item.output_url) {
       // Default behavior - open in new tab
       window.open(item.output_url, '_blank')
+    }
+  }
+
+  const handleDeleteItem = async (e: React.MouseEvent, generationId: string) => {
+    e.stopPropagation()
+    
+    if (window.confirm('Are you sure you want to delete this generation?')) {
+      if (onDeleteItem) {
+        onDeleteItem(generationId)
+        // Remove from local state immediately for better UX
+        setHistory(prev => prev.filter(item => item.generation_id !== generationId))
+      }
     }
   }
 
@@ -168,37 +188,82 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                   className="group relative bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-300 cursor-pointer"
                   onClick={() => handleImageClick(item)}
                 >
-                  {/* Image thumbnail */}
+                  {/* Image/Video thumbnail */}
                   <div className="aspect-square relative overflow-hidden bg-gray-100">
                     {item.output_url ? (
                       <>
-                        <img
-                          src={item.output_url}
-                          alt={item.prompt}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.style.display = 'none'
-                            target.parentElement?.classList.add('flex', 'items-center', 'justify-center')
-                            target.parentElement!.innerHTML = '<div class="w-8 h-8 text-gray-400"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>'
-                          }}
-                        />
+                        {isVideo(item.output_url) ? (
+                          <div className="relative w-full h-full">
+                            <video
+                              src={item.output_url}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              muted
+                              preload="metadata"
+                            />
+                            {/* Video play indicator */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="bg-black bg-opacity-50 rounded-full p-2">
+                                <Play className="w-6 h-6 text-white fill-white" />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={item.output_url}
+                            alt={item.prompt}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                              target.parentElement?.classList.add('flex', 'items-center', 'justify-center')
+                              target.parentElement!.innerHTML = '<div class="w-8 h-8 text-gray-400"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>'
+                            }}
+                          />
+                        )}
+                        
                         {/* Status indicator */}
                         <div className="absolute top-2 left-2">
-                          {item.success === 'success' ? (
-                            <CheckCircle className="w-4 h-4 text-green-600 bg-white rounded-full" />
-                          ) : (
-                            <XCircle className="w-4 h-4 text-red-600 bg-white rounded-full" />
-                          )}
+                          <CheckCircle className="w-4 h-4 text-green-600 bg-white rounded-full" />
                         </div>
-                        {/* Action icon on hover */}
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        
+                        {/* Action icons on hover */}
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {onTagImage && item.output_url && !isVideo(item.output_url) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onTagImage(item.output_url!)
+                              }}
+                              className="p-1 bg-purple-600 text-white rounded-full hover:bg-purple-700"
+                              title="Tag this image"
+                            >
+                              <Tag className="w-3 h-3" />
+                            </button>
+                          )}
+                          {onDeleteItem && (
+                            <button
+                              onClick={(e) => handleDeleteItem(e, item.generation_id)}
+                              className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
+                              title="Delete this generation"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                           {onSelectImage ? (
                             <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
                               ✓
                             </div>
                           ) : (
-                            <ExternalLink className="w-4 h-4 text-white bg-black bg-opacity-50 rounded p-0.5" />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                window.open(item.output_url, '_blank')
+                              }}
+                              className="p-1 bg-black bg-opacity-50 text-white rounded hover:bg-opacity-70"
+                              title="Open in new tab"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
                           )}
                         </div>
                       </>

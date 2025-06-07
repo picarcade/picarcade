@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock, Tag, User, LogOut } from 'lucide-react';
+import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock, Tag, User, LogOut, RotateCcw } from 'lucide-react';
 import { generateContent, uploadImage } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
 import GenerationHistory from './GenerationHistory';
@@ -197,26 +197,71 @@ const PerplexityInterface = () => {
 
   const selectFromHistory = (item: HistoryItem) => {
     if (item.output_url && item.success === 'success') {
-      // Create a mock UploadResponse object from the history item
-      const mockUpload: UploadResponse = {
+      // Replace the current active image/video with the selected one
+      setResult({
         success: true,
-        file_path: item.output_url,
-        public_url: item.output_url,
-        filename: `Generated - ${item.prompt.substring(0, 30)}...`,
-        content_type: 'image/png',
-        message: 'Selected from history'
-      };
+        generation_id: item.generation_id,
+        output_url: item.output_url,
+        model_used: item.model_used,
+        execution_time: item.execution_time,
+        image_source_type: 'working_image'
+      });
       
-      setUploadedImages(prev => [...prev, mockUpload]);
+      // Clear previous result and uploaded images since we're starting with a new base
+      setPreviousResult(null);
+      setUploadedImages([]);
+      setInputValue('');
       
-      // Add to input
-      const newPrompt = `Edit this image: ${item.output_url}`;
-      setInputValue(prev => 
-        prev ? `${prev}\n\n${newPrompt}` : newPrompt
-      );
+      // Set or update session ID for this working image
+      setSessionId(item.generation_id);
       
       setShowHistory(false);
     }
+  };
+
+  const handleDeleteGeneration = async (generationId: string) => {
+    try {
+      // Call API to delete the generation (you might need to implement this endpoint)
+      const response = await fetch(`/api/v1/generation/history/${generationId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        // Refresh history to remove the deleted item
+        setHistoryRefreshTrigger(prev => prev + 1);
+      } else {
+        console.error('Failed to delete generation');
+      }
+    } catch (error) {
+      console.error('Error deleting generation:', error);
+    }
+  };
+
+  const handleStartFresh = async () => {
+    if (isGenerating) return;
+    
+    // Clear all state
+    setInputValue('');
+    setUploadedImages([]);
+    setResult(null);
+    setPreviousResult(null);
+    setError(null);
+    setSessionId(null);
+    
+    // Clear any active working images by clearing the session
+    try {
+      if (sessionId) {
+        // Call API to clear the session (you might need to implement this endpoint)
+        const response = await fetch(`/api/v1/generation/session/${sessionId}`, {
+          method: 'DELETE'
+        });
+      }
+    } catch (error) {
+      console.log('Note: Could not clear session (this is normal if no session exists)');
+    }
+    
+    // Force refresh the page state
+    setHistoryRefreshTrigger(prev => prev + 1);
   };
 
 
@@ -322,6 +367,16 @@ const PerplexityInterface = () => {
               <div className="flex items-center gap-3 flex-shrink-0">
                 <button 
                   type="button"
+                  onClick={handleStartFresh}
+                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                  disabled={isGenerating}
+                  title="Start fresh - Clear all images and start over"
+                >
+                  <RotateCcw className="w-5 h-5 text-orange-400 hover:text-orange-300" />
+                </button>
+                
+                <button 
+                  type="button"
                   onClick={handleReferencesClick}
                   className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
                   disabled={isGenerating}
@@ -352,46 +407,6 @@ const PerplexityInterface = () => {
                   ) : (
                     <Paperclip className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                   )}
-                </button>
-                
-                <button 
-                  type="button"
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors"
-                  disabled={isGenerating}
-                >
-                  <MapPin className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors"
-                  disabled={isGenerating}
-                >
-                  <Image className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors"
-                  disabled={isGenerating}
-                >
-                  <Smile className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors"
-                  disabled={isGenerating}
-                >
-                  <Paperclip className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors"
-                  disabled={isGenerating}
-                >
-                  <Mic className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                 </button>
                 
                 {/* Submit Button */}
@@ -625,6 +640,7 @@ const PerplexityInterface = () => {
                   userId={userId}
                   onSelectImage={selectFromHistory}
                   onTagImage={handleTagImage}
+                  onDeleteItem={handleDeleteGeneration}
                 />
               </div>
 
