@@ -1,6 +1,6 @@
 "use client"
 import { useState } from 'react'
-import { CheckCircle, XCircle, Eye, Copy, Save, Clock } from 'lucide-react'
+import { CheckCircle, XCircle, Eye, Copy, Save, Clock, Tag } from 'lucide-react'
 import Image from 'next/image'
 import type { GenerationResultProps } from '../types'
 
@@ -55,7 +55,7 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
                 Your browser does not support video playback.
               </video>
             ) : (
-              <div className="relative">
+              <div className="relative group">
                 <Image
                   src={result.output_url}
                   alt="Generated content"
@@ -69,6 +69,16 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
                     <Eye className="w-8 h-8 text-gray-400" />
                   </div>
                 )}
+                {/* Tag icon overlay */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <button
+                    onClick={() => {/* TODO: Implement tag functionality */}}
+                    className="p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-lg"
+                    title="Tag this image"
+                  >
+                    <Tag className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             )}
           </div>

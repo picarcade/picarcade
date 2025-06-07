@@ -1,11 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock } from 'lucide-react';
+import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock, Tag, User, LogOut } from 'lucide-react';
 import { generateContent, uploadImage } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
 import GenerationHistory from './GenerationHistory';
+import ReferencesPanel from './ReferencesPanel';
+import TagImageModal from './TagImageModal';
+import { AuthModal } from './AuthModal';
+import { useAuth } from './AuthProvider';
 import { getOrCreateUserId } from '../lib/userUtils';
 
 const PerplexityInterface = () => {
+  const { user, session, loading, signOut } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResponse | null>(null);
@@ -17,8 +22,28 @@ const PerplexityInterface = () => {
   // Generate a persistent user ID that survives page refreshes
   const [userId] = useState(() => getOrCreateUserId());
   const [showHistory, setShowHistory] = useState(false);
+  const [showReferences, setShowReferences] = useState(false);
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [imageToTag, setImageToTag] = useState<string>('');
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +172,29 @@ const PerplexityInterface = () => {
     setShowHistory(true);
   };
 
+  const handleReferencesClick = () => {
+    setShowReferences(true);
+  };
+
+  const handleReferenceSelect = (tag: string) => {
+    // Add the @tag to the input
+    setInputValue(prev => {
+      const cursorPos = prev.length; // Add to end for now
+      return prev + (prev ? ' ' : '') + tag;
+    });
+    setShowReferences(false);
+  };
+
+  const handleTagImage = (imageUrl: string) => {
+    setImageToTag(imageUrl);
+    setShowTagModal(true);
+  };
+
+  const handleImageTagged = (tag: string) => {
+    // Optionally refresh references or show a success message
+    console.log(`Image tagged as @${tag}`);
+  };
+
   const selectFromHistory = (item: HistoryItem) => {
     if (item.output_url && item.success === 'success') {
       // Create a mock UploadResponse object from the history item
@@ -176,13 +224,64 @@ const PerplexityInterface = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {/* Logo */}
-        <div className="text-center mb-12">
-          <img 
-            src="/logo_with_text_white_trans.png" 
-            alt="PicArcade" 
-            className="h-32 mx-auto"
-          />
+        {/* Header with Logo and User Menu */}
+        <div className="flex items-center justify-between mb-12">
+          <div className="flex-1"></div>
+          
+          {/* Logo */}
+          <div className="text-center">
+            <img 
+              src="/logo_with_text_white_trans.png" 
+              alt="PicArcade" 
+              className="h-32 mx-auto"
+            />
+          </div>
+          
+          {/* User Menu */}
+          <div className="flex-1 flex justify-end">
+            {loading ? (
+              <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse"></div>
+            ) : user ? (
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-gray-800/60 border border-gray-700/50 hover:bg-gray-700/60 transition-colors"
+                >
+                  <User className="w-5 h-5 text-gray-300" />
+                  <span className="text-gray-300 text-sm hidden sm:block">
+                    {user.email?.split('@')[0] || 'User'}
+                  </span>
+                </button>
+                
+                {showUserMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+                    <div className="p-3 border-b border-gray-700">
+                      <p className="text-white text-sm font-medium">{user.email}</p>
+                      <p className="text-gray-400 text-xs">Signed in</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await signOut();
+                        setShowUserMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-3 text-left text-gray-300 hover:bg-gray-700 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <User className="w-4 h-4" />
+                Sign In
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Hidden File Input */}
@@ -221,6 +320,16 @@ const PerplexityInterface = () => {
 
               {/* Action Icons */}
               <div className="flex items-center gap-3 flex-shrink-0">
+                <button 
+                  type="button"
+                  onClick={handleReferencesClick}
+                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                  disabled={isGenerating}
+                  title="Manage references (@mentions)"
+                >
+                  <Tag className="w-5 h-5 text-purple-400 hover:text-purple-300" />
+                </button>
+                
                 <button 
                   type="button"
                   onClick={handleHistoryClick}
@@ -323,13 +432,22 @@ const PerplexityInterface = () => {
                       alt={image.filename}
                       className="w-full h-24 object-cover rounded-lg border border-gray-600"
                     />
-                    <button
-                      onClick={() => removeUploadedImage(index)}
-                      className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Remove image"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleTagImage(image.public_url)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-full p-1"
+                        title="Tag image"
+                      >
+                        <Tag className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => removeUploadedImage(index)}
+                        className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1"
+                        title="Remove image"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
                     <div className="absolute bottom-1 left-1 right-1 bg-black/70 text-white text-xs p-1 rounded truncate">
                       {image.filename}
                     </div>
@@ -412,11 +530,21 @@ const PerplexityInterface = () => {
                     Your browser does not support video playback.
                   </video>
                 ) : (
-                  <img 
-                    src={result.output_url} 
-                    alt="Generated content"
-                    className="max-w-full h-auto rounded-lg mx-auto shadow-lg"
-                  />
+                  <div className="relative inline-block">
+                    <img 
+                      src={result.output_url} 
+                      alt="Generated content"
+                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg"
+                    />
+                    {/* Tag icon overlay */}
+                    <button
+                      onClick={() => result.output_url && handleTagImage(result.output_url)}
+                      className="absolute top-2 right-2 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-all opacity-75 hover:opacity-100 shadow-lg"
+                      title="Tag this image"
+                    >
+                      <Tag className="w-4 h-4" />
+                    </button>
+                  </div>
                 )
               ) : (previousResult?.success && previousResult?.output_url) ? (
                 previousResult.output_url.includes('.mp4') || previousResult.output_url.includes('video') || previousResult.output_url.includes('mock-image-to-video') ? (
@@ -428,11 +556,21 @@ const PerplexityInterface = () => {
                     Your browser does not support video playback.
                   </video>
                 ) : (
-                  <img 
-                    src={previousResult.output_url} 
-                    alt="Previous generated content"
-                    className="max-w-full h-auto rounded-lg mx-auto shadow-lg opacity-75"
-                  />
+                  <div className="relative inline-block">
+                    <img 
+                      src={previousResult.output_url} 
+                      alt="Previous generated content"
+                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg opacity-75"
+                    />
+                    {/* Tag icon overlay */}
+                    <button
+                      onClick={() => previousResult.output_url && handleTagImage(previousResult.output_url)}
+                      className="absolute top-2 right-2 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-all opacity-75 hover:opacity-100 shadow-lg"
+                      title="Tag this image"
+                    >
+                      <Tag className="w-4 h-4" />
+                    </button>
+                  </div>
                 )
               ) : null}
               
@@ -486,6 +624,7 @@ const PerplexityInterface = () => {
                   refreshTrigger={historyRefreshTrigger}
                   userId={userId}
                   onSelectImage={selectFromHistory}
+                  onTagImage={handleTagImage}
                 />
               </div>
 
@@ -500,6 +639,30 @@ const PerplexityInterface = () => {
             </div>
           </div>
         )}
+
+        {/* References Panel */}
+        <ReferencesPanel
+          isOpen={showReferences}
+          onClose={() => setShowReferences(false)}
+          userId={userId}
+          onReferenceSelect={handleReferenceSelect}
+        />
+
+        {/* Tag Image Modal */}
+        <TagImageModal
+          isOpen={showTagModal}
+          onClose={() => setShowTagModal(false)}
+          imageUrl={imageToTag}
+          userId={userId}
+          onTagged={handleImageTagged}
+        />
+
+        {/* Authentication Modal */}
+        <AuthModal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          defaultMode="signin"
+        />
       </div>
     </div>
   );

@@ -52,8 +52,8 @@ class BasicIntentParser:
         
         self.edit_keywords = [
             "edit", "modify", "change", "alter", "adjust", "fix", 
-            "improve", "update", "remove", "add to", "put", "place",
-            "add a", "add the", "give it", "make it", "turn it",
+            "improve", "update", "remove", "add", "add to", "put", "place",
+            "add a", "add the", "give it", "make it", "make the", "turn it",
             "on it", "to it", "with", "without"
         ]
         
@@ -86,8 +86,18 @@ class BasicIntentParser:
         
         prompt_lower = prompt.lower()
         
+        # Check for references - this influences model selection
+        has_references = bool(re.search(r'@\w+', prompt))
+        
+        if has_references:
+            print(f"[DEBUG] Intent Parser: References detected in prompt, will force image generation")
+            # References are primarily for image generation with Runway
+            intent = CreativeIntent.GENERATE_IMAGE
+            confidence = 0.95  # High confidence for reference-based generation
+            content_type = "image_with_references"
+        
         # Priority 1: Explicit content type requests (video, animation, etc.) - these override session continuity
-        if any(keyword in prompt_lower for keyword in self.video_keywords):
+        elif any(keyword in prompt_lower for keyword in self.video_keywords):
             intent = CreativeIntent.GENERATE_VIDEO
             # Check if audio is also requested
             has_audio_request = any(keyword in prompt_lower for keyword in self.audio_keywords)
@@ -101,13 +111,15 @@ class BasicIntentParser:
             confidence = 0.95  # High confidence since images were uploaded
             
         # Priority 3: Session continuity - if there's a working image AND the prompt suggests editing
-        elif current_working_image and any(keyword in prompt_lower for keyword in self.edit_keywords):
+        elif current_working_image and self._is_editing_prompt(prompt_lower):
+            print(f"[DEBUG] Intent Parser: Working image + editing intent detected")
             intent = CreativeIntent.EDIT_IMAGE
             content_type = "image_edit"
             confidence = 0.95  # High confidence for explicit editing of working image
             
         # Priority 4: Session continuity - working image with ambiguous prompts that could be editing
         elif current_working_image and self._suggests_editing_context(prompt_lower):
+            print(f"[DEBUG] Intent Parser: Working image + contextual editing detected")
             intent = CreativeIntent.EDIT_IMAGE
             content_type = "image_edit"
             confidence = 0.85  # Lower confidence for ambiguous cases
@@ -125,6 +137,15 @@ class BasicIntentParser:
             
         else:
             # Default to image generation (even if there's a working image, if no editing context is detected)
+            print(f"[DEBUG] Intent Parser: No specific intent detected, defaulting to generate_image")
+            if current_working_image:
+                print(f"[DEBUG] Intent Parser: Had working image but no edit intent detected")
+            # Check if this looks like an editing prompt but no working image available
+            elif self._is_editing_prompt(prompt_lower) and not current_working_image:
+                print(f"[DEBUG] Intent Parser: ⚠️  EDITING PROMPT WITHOUT WORKING IMAGE DETECTED!")
+                print(f"[DEBUG] Intent Parser: User prompt suggests editing but no working image available")
+                print(f"[DEBUG] Intent Parser: This indicates session loss or server restart")
+                print(f"[DEBUG] Intent Parser: Falling back to generation with low confidence")
             intent = CreativeIntent.GENERATE_IMAGE
             content_type = self._detect_image_type(prompt_lower)
             confidence = 0.6
@@ -200,7 +221,7 @@ class BasicIntentParser:
         # Contextual editing phrases that suggest working with current image
         contextual_edit_indicators = [
             "make it", "turn it", "change it", "paint it", "color it",
-            "add a", "add some", "add the", "put a", "put some", "put the",
+            "add a", "add some", "add the", "add more", "put a", "put some", "put the",
             "give it", "give them", "give this", "remove the", "take away",
             "make this", "make that", "turn this", "turn that",
             "it should", "it needs", "this should", "this needs",
@@ -208,6 +229,11 @@ class BasicIntentParser:
             "more", "less", "bigger", "smaller", "brighter", "darker",
             "different color", "another color", "new color"
         ]
+        
+        # Special handling for "add X" patterns - common editing requests
+        if prompt_lower.startswith("add ") and len(prompt_lower.split()) >= 2:
+            # "add juggling balls", "add flowers", etc.
+            return True
         
         # Handle "and X" pattern - very common for adding items to existing images
         if prompt_lower.startswith("and "):
@@ -241,6 +267,47 @@ class BasicIntentParser:
                 return True
         
         return False
+
+    def _is_editing_prompt(self, prompt_lower: str) -> bool:
+        """
+        Smart detection of editing vs generation prompts
+        Handles cases like:
+        - "make the number 23" (edit) vs "make an image of" (generate)
+        - "make him look" (edit) vs "make a person look" (generate)
+        - "change the color" (edit) vs "create a red car" (generate)
+        """
+        
+        # First check for generation patterns that should override edit detection
+        generation_patterns = [
+            "make an image", "make a", "create an image", "create a", 
+            "generate an image", "generate a", "draw an image", "draw a",
+            "show an image", "show a", "picture of a", "image of a"
+        ]
+        
+        if any(pattern in prompt_lower for pattern in generation_patterns):
+            return False  # This is generation, not editing
+            
+        # Check for pronoun-based editing (referring to existing content)
+        pronouns = ["him", "her", "it", "them", "his", "hers", "its", "their"]
+        action_words = ["make", "change", "turn", "have", "let", "get"]
+        
+        # Pattern: "make him X", "change her X", "turn it X", etc.
+        for action in action_words:
+            for pronoun in pronouns:
+                if f"{action} {pronoun}" in prompt_lower:
+                    print(f"[DEBUG] Intent Parser: Detected pronoun editing pattern: '{action} {pronoun}'")
+                    return True
+                    
+        # Now check for edit keywords
+        if any(keyword in prompt_lower for keyword in self.edit_keywords):
+            return True
+            
+        # Check for "make the X" pattern (editing existing content)
+        if "make the" in prompt_lower:
+            return True
+            
+        # Check contextual editing
+        return self._suggests_editing_context(prompt_lower)
 
     def _suggest_initial_model(self, intent: CreativeIntent, complexity: str) -> str:
         """Basic model suggestion logic"""
