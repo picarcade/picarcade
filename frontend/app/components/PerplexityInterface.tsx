@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock } from 'lucide-react';
-import { generateContent, uploadImage, getUserHistory } from '../lib/api';
+import { generateContent, uploadImage } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
+import GenerationHistory from './GenerationHistory';
+import { getOrCreateUserId } from '../lib/userUtils';
 
 const PerplexityInterface = () => {
   const [inputValue, setInputValue] = useState('');
@@ -12,10 +14,10 @@ const PerplexityInterface = () => {
   const [uploadedImages, setUploadedImages] = useState<UploadResponse[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null); // Track session for conversational editing
-  const [userId] = useState('user_' + Date.now()); // Generate persistent user ID
+  // Generate a persistent user ID that survives page refreshes
+  const [userId] = useState(() => getOrCreateUserId());
   const [showHistory, setShowHistory] = useState(false);
-  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -60,10 +62,8 @@ const PerplexityInterface = () => {
         setInputValue('');
         setPreviousResult(null); // Clear previous result since we have new one
         
-        // Refresh history if modal is open to show the new generation
-        if (showHistory) {
-          loadHistory();
-        }
+        // Refresh history to show the new generation
+        setHistoryRefreshTrigger(prev => prev + 1);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -141,23 +141,10 @@ const PerplexityInterface = () => {
     }
   };
 
-  const loadHistory = async () => {
-    setIsLoadingHistory(true);
-    try {
-      const history = await getUserHistory(userId, 50);
-      setHistoryItems(history);
-    } catch (error) {
-      console.error('Failed to load history:', error);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  };
+
 
   const handleHistoryClick = () => {
     setShowHistory(true);
-    if (historyItems.length === 0) {
-      loadHistory();
-    }
   };
 
   const selectFromHistory = (item: HistoryItem) => {
@@ -184,16 +171,7 @@ const PerplexityInterface = () => {
     }
   };
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
@@ -504,80 +482,19 @@ const PerplexityInterface = () => {
 
               {/* Content */}
               <div className="flex-1 overflow-auto p-6">
-                {isLoadingHistory ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-                    <span className="ml-3 text-gray-400">Loading history...</span>
-                  </div>
-                ) : historyItems.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Image className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                    <p className="text-gray-400 text-lg">No generations yet</p>
-                    <p className="text-gray-500 text-sm">Your generated images will appear here</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {historyItems.map((item) => (
-                      <div
-                        key={item.generation_id}
-                        className="bg-gray-700/50 rounded-lg overflow-hidden hover:bg-gray-700 transition-colors cursor-pointer group"
-                        onClick={() => selectFromHistory(item)}
-                      >
-                        {item.output_url && item.success === 'success' ? (
-                          <div className="relative">
-                            <img
-                              src={item.output_url}
-                              alt={item.prompt}
-                              className="w-full h-32 object-cover group-hover:scale-105 transition-transform"
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <span className="text-white text-sm font-medium">Select</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="h-32 bg-gray-600 flex items-center justify-center">
-                            <X className="w-8 h-8 text-gray-400" />
-                          </div>
-                        )}
-                        
-                        <div className="p-3">
-                          <p className="text-white text-sm line-clamp-2 mb-2">
-                            {item.prompt}
-                          </p>
-                          <div className="flex items-center justify-between text-xs text-gray-400">
-                            <span className="bg-gray-600 px-2 py-1 rounded">
-                              {item.model_used?.replace(/_/g, ' ')}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatTimeAgo(item.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <GenerationHistory
+                  refreshTrigger={historyRefreshTrigger}
+                  userId={userId}
+                  onSelectImage={selectFromHistory}
+                />
               </div>
 
               {/* Footer */}
               <div className="border-t border-gray-700 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-center">
                   <p className="text-gray-400 text-sm">
                     Click on any image to add it to your editing context
                   </p>
-                  <button
-                    onClick={loadHistory}
-                    disabled={isLoadingHistory}
-                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    {isLoadingHistory ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <History className="w-4 h-4" />
-                    )}
-                    Refresh
-                  </button>
                 </div>
               </div>
             </div>

@@ -209,6 +209,21 @@ class BasicIntentParser:
             "different color", "another color", "new color"
         ]
         
+        # Handle "and X" pattern - very common for adding items to existing images
+        if prompt_lower.startswith("and "):
+            return True
+            
+        # Handle "with X" pattern - another common way to add elements
+        if prompt_lower.startswith("with "):
+            return True
+            
+        # Handle other common conversational addition patterns
+        addition_patterns = [
+            "but ", "plus ", "also ", "wearing ", "holding ", "now with "
+        ]
+        if any(prompt_lower.startswith(pattern) for pattern in addition_patterns):
+            return True
+        
         # Pronouns and references that suggest working with existing content
         contextual_references = [
             "it ", "this ", "that ", "them ", "these ", "those ",

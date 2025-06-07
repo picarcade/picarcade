@@ -43,6 +43,8 @@ export interface GenerationResultProps {
 
 export interface GenerationHistoryProps {
   refreshTrigger: number;
+  userId: string;
+  onSelectImage?: (item: HistoryItem) => void;
 }
 
 export interface UploadResponse {

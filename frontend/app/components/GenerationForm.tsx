@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Wand2, Zap, Gauge, Crown } from 'lucide-react'
 import type { GenerationFormProps } from '../types'
+import { getOrCreateUserId } from '../lib/userUtils'
 
 export default function GenerationForm({ 
   onGenerationStart, 
@@ -10,7 +11,7 @@ export default function GenerationForm({
 }: GenerationFormProps) {
   const [prompt, setPrompt] = useState('')
   const [qualityPriority, setQualityPriority] = useState<'speed' | 'balanced' | 'quality'>('balanced')
-  const [userId] = useState(() => `user_${Math.random().toString(36).substr(2, 9)}`)
+  const [userId] = useState(() => getOrCreateUserId())
 
   const qualityOptions = [
     { 
