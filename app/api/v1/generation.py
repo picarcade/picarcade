@@ -207,11 +207,17 @@ async def generate_content(
         
         # Update session with newly generated image for future edits
         if result.success and result.output_url:
+            print(f"[DEBUG] API: Setting working image in session {effective_session_id}: {result.output_url}")
             await session_manager.set_current_working_image(
                 session_id=effective_session_id,
                 image_url=result.output_url,
                 user_id=request.user_id
             )
+            
+            # Verify the working image was set correctly
+            verification = await session_manager.get_current_working_image(effective_session_id)
+            print(f"[DEBUG] API: Verification - working image is now: {verification}")
+            
             # Return the effective session_id to the frontend for future requests
             if not result.metadata:
                 result.metadata = {}
