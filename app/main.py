@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import generation, uploads
+from app.api.v1 import generation, uploads, references, auth
 from app.core.config import settings
 from app.core.database import db_manager
+from app.services.session_manager import session_manager
 import os
 
 # Debug print for environment variable and settings
@@ -29,12 +30,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize database on startup
+# Initialize database and session tables on startup
 @app.on_event("startup")
 async def startup_event():
     await db_manager.create_tables()
+    await session_manager.create_session_tables()
 
 # Include API routes
+app.include_router(
+    auth.router,
+    prefix=f"{settings.api_v1_str}/auth",
+    tags=["authentication"]
+)
+
 app.include_router(
     generation.router,
     prefix=f"{settings.api_v1_str}/generation",
@@ -47,13 +55,20 @@ app.include_router(
     tags=["uploads"]
 )
 
+app.include_router(
+    references.router,
+    prefix=f"{settings.api_v1_str}/references",
+    tags=["references"]
+)
+
 @app.get("/")
 async def root():
     return {
         "message": "Pictures API - AI-powered content generation",
         "version": "1.0.0-phase1",
         "status": "active",
-        "database": "supabase"
+        "database": "supabase",
+        "authentication": "enabled"
     }
 
 @app.get("/health")
@@ -61,7 +76,8 @@ async def health_check():
     return {
         "status": "healthy", 
         "phase": "1",
-        "database": "connected" if db_manager.supabase else "disconnected"
+        "database": "connected" if db_manager.supabase else "disconnected",
+        "authentication": "supabase"
     }
 
 if __name__ == "__main__":

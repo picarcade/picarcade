@@ -11,6 +11,7 @@ from app.services.generators.runway import RunwayGenerator
 from app.services.generators.replicate import ReplicateGenerator
 from app.services.session_manager import session_manager
 from app.services.reference_service import ReferenceService
+from app.services.virtual_tryon import VirtualTryOnService
 from app.core.logging import api_logger
 from app.api.v1.auth import get_current_user
 from typing import Optional, Dict, Any
@@ -24,6 +25,9 @@ model_router = ModelRouter()
 # Initialize generators
 runway_generator = RunwayGenerator()
 replicate_generator = ReplicateGenerator()
+
+# Initialize virtual try-on service
+virtual_tryon_service = VirtualTryOnService()
 
 @router.post("/generate", response_model=GenerationResponse)
 async def generate_content(
@@ -119,6 +123,55 @@ async def generate_content(
             uploaded_images=request.uploaded_images,
             current_working_image=current_working_image
         )
+        
+        # Handle virtual try-on requests specially
+        if intent_analysis.detected_intent.value == "virtual_tryon":
+            print(f"[DEBUG] API: Virtual try-on request detected")
+            
+            tryon_result = await virtual_tryon_service.process_virtual_tryon_request(
+                prompt=original_prompt,  # Use original prompt, not enhanced
+                user_id=request.user_id,
+                generation_id=generation_id
+            )
+            
+            if not tryon_result["success"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=tryon_result["error"]
+                )
+            
+            # Create successful response
+            result = GenerationResponse(
+                success=True,
+                generation_id=generation_id,
+                output_url=tryon_result["output_url"],
+                model_used="virtual-tryon",
+                execution_time=time.time() - start_time,
+                metadata={
+                    "method": "virtual_tryon",
+                    "reference_used": tryon_result["reference_used"].tag if tryon_result.get("reference_used") else None,
+                    "clothing_url": tryon_result.get("clothing_url"),
+                    "category": tryon_result.get("category"),
+                    "virtual_tryon_metadata": tryon_result.get("metadata", {})
+                }
+            )
+            
+            # Store result in session as working image
+            if result.output_url:
+                print(f"[DEBUG] API: Setting virtual try-on result as working image in session {effective_session_id}: {result.output_url}")
+                await session_manager.set_current_working_image(
+                    session_id=effective_session_id,
+                    image_url=result.output_url,
+                    user_id=request.user_id
+                )
+            
+            # Store generation result in background
+            background_tasks.add_task(
+                store_generation_result,
+                request, intent_analysis, {"model": "virtual-tryon"}, result
+            )
+            
+            return result
         
         # Phase 2: Route to optimal model
         routing_decision = await model_router.route_generation(

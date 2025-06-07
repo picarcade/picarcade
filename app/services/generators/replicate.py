@@ -154,6 +154,30 @@ class ReplicateGenerator(BaseGenerator):
             }
         return await asyncio.to_thread(sync_call)
 
+    async def _generate_virtual_tryon(self, prompt: str, parameters: Dict[str, Any], generation_id: str = None) -> Dict[str, Any]:
+        """Generate virtual try-on using specialized models on Replicate"""
+        def sync_call():
+            model_version = parameters.get("model", "cuuupid/outfit-anyone:38b72dfe69c51c1ab0e42e6b56d94c1cee8c2b4a3ac4da58c86e00ecb006c970")
+            
+            inputs = {
+                "human_img": parameters.get("human_img"),
+                "garm_img": parameters.get("garm_img"),
+                "garment_des": parameters.get("garment_des", "A clothing item for virtual try-on")
+            }
+            
+            print(f"[DEBUG] Virtual try-on model: {model_version}")
+            print(f"[DEBUG] Inputs: {inputs}")
+            
+            if not inputs["human_img"] or not inputs["garm_img"]:
+                raise ValueError("Both human_img and garm_img are required for virtual try-on")
+            
+            output = replicate.run(model_version, input=inputs)
+            return {
+                "output_url": self._extract_url(output) if output else None,
+                "metadata": {"model_version": model_version, "inputs": inputs}
+            }
+        return await asyncio.to_thread(sync_call)
+
     async def _generate_flux(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Generate image using a Flux model on Replicate (official schema)"""
         def sync_call():

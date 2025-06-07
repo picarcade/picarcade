@@ -341,7 +341,7 @@ const PerplexityInterface = () => {
 
         {/* Search Interface */}
         <form onSubmit={handleSubmit} className="relative mb-8">
-          <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-2xl">
+          <div className={`bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-2xl ${isGenerating ? 'throb-outline' : ''}`}>
             <div className="flex items-center gap-3">
               {/* Search Icon */}
               <div className="flex-shrink-0">

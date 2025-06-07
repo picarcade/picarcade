@@ -2,6 +2,7 @@ import re
 from typing import Dict, Any
 from app.models.generation import CreativeIntent, IntentAnalysis
 from app.core.logging import intent_logger
+from app.services.virtual_tryon import VirtualTryOnService
 
 """
 Intent Decision Logic (Fixed Priority Order):
@@ -54,7 +55,7 @@ class BasicIntentParser:
             "edit", "modify", "change", "alter", "adjust", "fix", 
             "improve", "update", "remove", "add", "add to", "put", "place",
             "add a", "add the", "give it", "make it", "make the", "turn it",
-            "on it", "to it", "with", "without"
+            "on it", "to it", "with", "without", "zoom out", "zoom in", "zoom"
         ]
         
         self.enhance_keywords = [
@@ -89,7 +90,14 @@ class BasicIntentParser:
         # Check for references - this influences model selection
         has_references = bool(re.search(r'@\w+', prompt))
         
-        if has_references:
+        # Priority 0: Virtual Try-On Requests (highest priority)
+        if VirtualTryOnService.is_virtual_tryon_request(prompt):
+            intent = CreativeIntent.VIRTUAL_TRYON
+            content_type = "virtual_tryon"
+            confidence = 0.95
+            print(f"[DEBUG] Intent Parser: Priority 0 - Virtual try-on request detected")
+        
+        elif has_references:
             print(f"[DEBUG] Intent Parser: References detected in prompt, will force image generation")
             # References are primarily for image generation with Runway
             intent = CreativeIntent.GENERATE_IMAGE

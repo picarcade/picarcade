@@ -1,5 +1,5 @@
-from typing import Dict, Any, Optional
-from app.models.generation import IntentAnalysis, QualityPriority, GenerationRequest
+from typing import Dict, Any, Optional, List
+from app.models.generation import IntentAnalysis, QualityPriority, GenerationRequest, ReferenceImage
 from app.core.logging import routing_logger
 
 class ModelRouter:
@@ -56,6 +56,15 @@ class ModelRouter:
                 "quality": 8,
                 "cost": 5,
                 "supports": ["edit_image"]
+            },
+            
+            # Virtual try-on models
+            "outfit-anyone": {
+                "type": "virtual_tryon",
+                "speed": 6,
+                "quality": 8,
+                "cost": 4,
+                "supports": ["virtual_tryon"]
             }
         }
     
@@ -74,6 +83,44 @@ class ModelRouter:
         Returns:
             Routing decision with model and parameters
         """
+        
+        # Check if references are provided - ALWAYS use Runway if so
+        has_references = request.reference_images and len(request.reference_images) > 0
+        
+        if has_references:
+            print(f"[DEBUG] Router: References detected, forcing Runway gen4_image model")
+            print(f"[DEBUG] Router: Reference count: {len(request.reference_images)}")
+            
+            # Override model selection for references
+            selected_model = "runway_gen4_image"
+            parameters = self._generate_runway_reference_parameters(
+                request.reference_images,
+                intent_analysis,
+                request.quality_priority
+            )
+            
+            result = {
+                "model": selected_model,
+                "confidence": 1.0,  # High confidence for forced routing
+                "parameters": parameters,
+                "estimated_time": 30,  # Runway gen4_image typical time
+                "routing_reason": f"Forced Runway gen4_image due to {len(request.reference_images)} reference images"
+            }
+            
+            # Log routing decision
+            if generation_id:
+                routing_logger.log_model_routing(
+                    generation_id=generation_id,
+                    selected_model=selected_model,
+                    routing_confidence=1.0,
+                    quality_priority=request.quality_priority.value,
+                    estimated_time=30,
+                    routing_reason=result["routing_reason"],
+                    compatible_models=[selected_model],
+                    model_scores={selected_model: 1.0}
+                )
+            
+            return result
         
         # Check if we need image-to-video generation
         # This happens when: video intent + existing image in context
@@ -155,7 +202,8 @@ class ModelRouter:
             "generate_video": "generate_video",
             "image_to_video": "image_to_video",
             "edit_image": "edit_image",
-            "enhance_image": "generate_image"  # Use generation models for enhancement
+            "enhance_image": "generate_image",  # Use generation models for enhancement
+            "virtual_tryon": "virtual_tryon"
         }
         
         required_capability = intent_mapping.get(intent, "generate_image")
@@ -283,7 +331,8 @@ class ModelRouter:
             "dall-e-3": 20,
             "runway_gen4_turbo": 120,
             "google/veo-3": 60,  # Veo 3 is faster than Runway
-            "flux-kontext": 25
+            "flux-kontext": 25,
+            "outfit-anyone": 30
         }
         
         base_time = base_times.get(model, 30)
@@ -305,7 +354,8 @@ class ModelRouter:
             "dall-e-3": "Selected for creative interpretation",
             "runway_gen4_turbo": "Selected for high-quality video generation",
             "google/veo-3": "Selected for advanced video generation with audio support",
-            "flux-kontext": "Selected for precise image editing"
+            "flux-kontext": "Selected for precise image editing",
+            "outfit-anyone": "Selected for virtual clothing try-on"
         }
         
         # Special handling for image-to-video
@@ -316,4 +366,35 @@ class ModelRouter:
             
         priority_note = f" (optimizing for {quality_priority.value})"
         
-        return base_explanation + priority_note 
+        return base_explanation + priority_note
+    
+    def _generate_runway_reference_parameters(self, 
+                                            reference_images: List[ReferenceImage],
+                                            intent_analysis: IntentAnalysis,
+                                            quality_priority: QualityPriority) -> Dict[str, Any]:
+        """Generate parameters for Runway gen4_image with references"""
+        
+        # Convert our ReferenceImage objects to Runway API format
+        runway_references = []
+        for ref in reference_images:
+            runway_references.append({
+                "uri": ref.uri,
+                "tag": ref.tag
+            })
+        
+        parameters = {
+            "model": "gen4_image",
+            "reference_images": runway_references,
+            "type": "text_to_image_with_references",
+            "ratio": "1920:1080"  # Default high quality
+        }
+        
+        # Adjust based on quality priority
+        if quality_priority == QualityPriority.QUALITY:
+            parameters["ratio"] = "1920:1080"
+        elif quality_priority == QualityPriority.SPEED:
+            parameters["ratio"] = "1280:720"
+        else:  # BALANCED
+            parameters["ratio"] = "1920:1080"
+        
+        return parameters 

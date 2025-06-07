@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "./components/AuthProvider";
 
 export const metadata: Metadata = {
-  title: "Perplexity Pro",
-  description: "Perplexity Pro UI Clone",
+  title: "Pictures - AI Image & Video Generation",
+  description: "AI-powered image and video generation with intelligent routing",
 };
 
 export default function RootLayout({
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
