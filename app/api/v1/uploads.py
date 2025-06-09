@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
 from typing import Optional
 import logging
 
@@ -9,6 +9,7 @@ router = APIRouter()
 
 @router.post("/image")
 async def upload_image(
+    request: Request,
     file: UploadFile = File(...),
     user_id: Optional[str] = Form(None),
     resize_max: Optional[int] = Form(2048)
@@ -24,6 +25,24 @@ async def upload_image(
     Returns:
         Upload result with file URL and metadata
     """
+    
+    # Debug logging
+    print(f"[DEBUG] Upload endpoint received:")
+    print(f"[DEBUG]   Content-Type: {request.headers.get('content-type', 'None')}")
+    print(f"[DEBUG]   file: {file.filename if file else 'None'}")
+    print(f"[DEBUG]   file.content_type: {file.content_type if file else 'None'}")
+    print(f"[DEBUG]   file.size: {getattr(file, 'size', 'unknown')}")
+    print(f"[DEBUG]   user_id: {user_id}")
+    print(f"[DEBUG]   resize_max: {resize_max}")
+    
+    # Check if file is actually received
+    if not file:
+        print(f"[ERROR] No file received in upload request")
+        raise HTTPException(status_code=422, detail="No file provided")
+    
+    if not file.filename:
+        print(f"[ERROR] File received but no filename")
+        raise HTTPException(status_code=422, detail="File must have a filename")
     
     # Validate file type
     if not file.content_type or not file.content_type.startswith('image/'):

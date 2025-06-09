@@ -59,6 +59,7 @@ const PerplexityInterface = () => {
     }
 
     try {
+      console.log(`[DEBUG Frontend] About to generate with session_id: ${sessionId}`);
       const response = await generateContent({
         prompt: inputValue.trim(),
         user_id: userId,
@@ -195,7 +196,7 @@ const PerplexityInterface = () => {
     console.log(`Image tagged as @${tag}`);
   };
 
-  const selectFromHistory = (item: HistoryItem) => {
+  const selectFromHistory = async (item: HistoryItem) => {
     if (item.output_url && item.success === 'success') {
       // Replace the current active image/video with the selected one
       setResult({
@@ -213,7 +214,23 @@ const PerplexityInterface = () => {
       setInputValue('');
       
       // Set or update session ID for this working image
+      console.log(`[DEBUG Frontend] Setting session ID to: ${item.generation_id}`);
       setSessionId(item.generation_id);
+      
+      // **CRITICAL FIX**: Set this image as the working image in the session
+      try {
+        const sessionId = item.generation_id; // Use generation_id as session_id
+        console.log(`[DEBUG Frontend] About to set working image for session ${sessionId}: ${item.output_url}`);
+        
+        // Import the API function we'll need
+        const { setWorkingImage } = await import('../lib/api');
+        
+        const result = await setWorkingImage(sessionId, item.output_url, userId);
+        console.log(`[DEBUG Frontend] Successfully set working image:`, result);
+      } catch (error) {
+        console.error('[DEBUG Frontend] Failed to set working image in session:', error);
+        // Don't throw - continue with the selection even if working image setting fails
+      }
       
       setShowHistory(false);
     }

@@ -1,0 +1,11 @@
+,,,,,,,
+,,,,,,,
+,Prompt Type,Active Image,Uploaded Image,Referenced Image,Type Determined,Model to Use,Prompt Enhancement Strategy
+,Create new image,NO,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
+,Create new image,YES,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
+,Create new image,NO,NO,YES,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+,Create new image,NO,YES,NO,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+,Edit Request,YES,NO,NO,EDIT_IMAGE,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+,Edit Request,YES,YES,NO,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+,Edit Request,YES,NO,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+,Edit Request,YES,YES,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]

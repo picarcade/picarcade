@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Test</title>
+</head>
+<body>
+    <h1>Upload Test</h1>
+    <input type="file" id="fileInput" accept="image/*">
+    <button onclick="testUpload()">Test Upload</button>
+    <div id="result"></div>
+
+    <script>
+        async function testUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+            
+            console.log('Testing upload with file:', file.name, 'Size:', file.size, 'Type:', file.type);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('user_id', 'test_user');
+            formData.append('resize_max', '2048');
+            
+            console.log('FormData entries:');
+            for (const [key, value] of formData.entries()) {
+                if (key === 'file') {
+                    console.log(key + ':', 'File -', value.name, value.size, 'bytes');
+                } else {
+                    console.log(key + ':', value);
+                }
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/uploads/image', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                
+                const result = await response.text();
+                console.log('Response body:', result);
+                
+                document.getElementById('result').innerHTML = `
+                    <h3>Result:</h3>
+                    <p>Status: ${response.status}</p>
+                    <pre>${result}</pre>
+                `;
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                document.getElementById('result').innerHTML = `
+                    <h3>Error:</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 

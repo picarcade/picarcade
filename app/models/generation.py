@@ -47,4 +47,7 @@ class IntentAnalysis(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     content_type: str  # "photo", "artwork", "video", etc.
     complexity_level: str  # "simple", "moderate", "complex"
-    suggested_model: Optional[str] = None 
+    suggested_model: Optional[str] = None
+    reasoning: Optional[str] = None  # AI reasoning for the classification
+    suggested_enhancements: Optional[List[str]] = None  # Suggested prompt improvements
+    metadata: Optional[Dict[str, Any]] = None  # Additional metadata for enhanced classification 

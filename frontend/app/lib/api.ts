@@ -15,6 +15,12 @@ const api = axios.create({
 // Add request interceptor to include auth headers
 api.interceptors.request.use(async (config) => {
   try {
+    // Skip auth headers for upload endpoints to avoid interfering with multipart form data
+    if (config.url?.includes('/uploads/')) {
+      console.log('[Auth] Skipping auth headers for upload endpoint')
+      return config
+    }
+    
     const authHeaders = await apiHelpers.getAuthHeader()
     Object.assign(config.headers, authHeaders)
   } catch (error) {
@@ -72,14 +78,33 @@ export const uploadImage = async (
     }
     formData.append('resize_max', resizeMax.toString())
 
+    console.log('[Upload] Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type)
+    console.log('[Upload] FormData entries:', Array.from(formData.entries()).map(([key, value]) => 
+      key === 'file' ? [key, `File: ${(value as File).name}`] : [key, value]
+    ))
+    console.log('[Upload] DEBUG: FormData constructed at', new Date().toISOString())
+
     const response = await api.post('/api/v1/uploads/image', formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        // Don't set Content-Type - let axios set it automatically with boundary
       },
     })
     return response.data
   } catch (error) {
+    console.error('[Upload] Error details:', error)
     if (axios.isAxiosError(error)) {
+      console.error('[Upload] Response data:', error.response?.data)
+      console.error('[Upload] Response status:', error.response?.status)
+      console.error('[Upload] Full response:', error.response)
+      
+      // Log validation errors in detail
+      if (error.response?.data?.detail && Array.isArray(error.response.data.detail)) {
+        console.error('[Upload] Validation errors:')
+        error.response.data.detail.forEach((err: any, i: number) => {
+          console.error(`[Upload]   ${i + 1}. ${err.type}: ${err.msg} at ${err.loc?.join('.')}`)
+        })
+      }
+      
       throw new Error(error.response?.data?.detail || error.message)
     }
     throw error
@@ -262,4 +287,20 @@ export const checkReferencesInPrompt = async (prompt: string): Promise<{
     }
     throw error
   }
-} 
+}
+
+export const setWorkingImage = async (sessionId: string, imageUrl: string, userId: string): Promise<any> => {
+  try {
+    const response = await api.post('/api/v1/generation/session/set-working-image', {
+      session_id: sessionId,
+      image_url: imageUrl,
+      user_id: userId
+    })
+    return response.data
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || error.message)
+    }
+    throw error
+  }
+}

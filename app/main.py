@@ -1,14 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import generation, uploads, references, auth
 from app.core.config import settings
 from app.core.database import db_manager
 from app.services.session_manager import session_manager
 import os
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
 
 # Debug print for environment variable and settings
 print("REPLICATE_API_TOKEN in backend env:", os.environ.get("REPLICATE_API_TOKEN"))
 print("settings.replicate_api_token:", settings.replicate_api_token)
+print("OPENAI_API_KEY loaded:", "Yes" if os.getenv("OPENAI_API_KEY") else "No")
+
+# Import API routes after environment is loaded
+from app.api.v1 import generation, uploads, references, auth, enhanced_generation
+from app.api.simplified_endpoints import router as simplified_router
 
 app = FastAPI(
     title="Pictures API",
@@ -59,6 +67,16 @@ app.include_router(
     references.router,
     prefix=f"{settings.api_v1_str}/references",
     tags=["references"]
+)
+
+app.include_router(
+    enhanced_generation.router,
+    tags=["enhanced-generation"]
+)
+
+app.include_router(
+    simplified_router,
+    tags=["simplified-flow"]
 )
 
 @app.get("/")

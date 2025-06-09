@@ -219,7 +219,16 @@ class SupabaseSessionManager:
             
             # If no rows updated, create new session
             if not update_result.data:
-                await self.create_session(session_id, user_id, {"current_working_image": image_url})
+                print(f"[DEBUG] SessionManager: No existing session found, creating new one")
+                session_data = {
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "current_working_image": image_url,
+                    "metadata": {},
+                    "expires_at": expires_at.isoformat()
+                }
+                result = self.supabase.table("user_sessions").insert(session_data).execute()
+                print(f"[DEBUG] SessionManager: Created new session with working image: {result.data}")
             
             print(f"[DEBUG] SessionManager: Session {session_id} updated successfully")
             

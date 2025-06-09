@@ -144,19 +144,28 @@ class BasicIntentParser:
             confidence = 0.9
             
         else:
-            # Default to image generation (even if there's a working image, if no editing context is detected)
-            print(f"[DEBUG] Intent Parser: No specific intent detected, defaulting to generate_image")
-            if current_working_image:
-                print(f"[DEBUG] Intent Parser: Had working image but no edit intent detected")
-            # Check if this looks like an editing prompt but no working image available
-            elif self._is_editing_prompt(prompt_lower) and not current_working_image:
-                print(f"[DEBUG] Intent Parser: ⚠️  EDITING PROMPT WITHOUT WORKING IMAGE DETECTED!")
-                print(f"[DEBUG] Intent Parser: User prompt suggests editing but no working image available")
-                print(f"[DEBUG] Intent Parser: This indicates session loss or server restart")
-                print(f"[DEBUG] Intent Parser: Falling back to generation with low confidence")
-            intent = CreativeIntent.GENERATE_IMAGE
-            content_type = self._detect_image_type(prompt_lower)
-            confidence = 0.6
+            # Check if we have contextual editing with working image
+            if current_working_image and self._suggests_editing_context(prompt_lower):
+                print(f"[DEBUG] Intent Parser: 🎯 CONTEXTUAL EDITING DETECTED!")
+                print(f"[DEBUG] Intent Parser: Working image + contextual prompt = editing workflow")
+                print(f"[DEBUG] Intent Parser: Prompt: '{prompt}' suggests editing existing image")
+                intent = CreativeIntent.EDIT_IMAGE
+                content_type = "image_edit"
+                confidence = 0.8  # High confidence for contextual editing
+            else:
+                # Default to image generation
+                print(f"[DEBUG] Intent Parser: No specific intent detected, defaulting to generate_image")
+                if current_working_image:
+                    print(f"[DEBUG] Intent Parser: Had working image but no edit intent detected")
+                # Check if this looks like an editing prompt but no working image available
+                elif self._is_editing_prompt(prompt_lower) and not current_working_image:
+                    print(f"[DEBUG] Intent Parser: ⚠️  EDITING PROMPT WITHOUT WORKING IMAGE DETECTED!")
+                    print(f"[DEBUG] Intent Parser: User prompt suggests editing but no working image available")
+                    print(f"[DEBUG] Intent Parser: This indicates session loss or server restart")
+                    print(f"[DEBUG] Intent Parser: Falling back to generation with low confidence")
+                intent = CreativeIntent.GENERATE_IMAGE
+                content_type = self._detect_image_type(prompt_lower)
+                confidence = 0.6
         
         # Analyze complexity
         complexity = self._analyze_complexity(prompt)
@@ -167,7 +176,10 @@ class BasicIntentParser:
             confidence=confidence,
             content_type=content_type,
             complexity_level=complexity,
-            suggested_model=self._suggest_initial_model(intent, complexity)
+            suggested_model=self._suggest_initial_model(intent, complexity),
+            reasoning=f"Basic pattern matching: {intent.value}",
+            suggested_enhancements=[],
+            metadata={"basic_classification": True}
         )
         
         # Log intent decision
@@ -235,7 +247,10 @@ class BasicIntentParser:
             "it should", "it needs", "this should", "this needs",
             "instead of", "but with", "but make", "except",
             "more", "less", "bigger", "smaller", "brighter", "darker",
-            "different color", "another color", "new color"
+            "different color", "another color", "new color",
+            # Style transformation phrases
+            "make it a", "make it look", "make it more", "make it into",
+            "turn it into", "convert it", "transform it", "style it"
         ]
         
         # Special handling for "add X" patterns - common editing requests

@@ -77,18 +77,21 @@ class ReferenceService:
             The generated tag for the working image
         """
         try:
-            # Generate tag using VLM
-            base_tag = await ReferenceService.analyze_image_with_vlm(image_url)
+            # Always use 'working_image' as the tag for consistency with simplified flow LLM prompts
+            final_tag = "working_image"
             
-            # Check if this exact tag already exists, if so add suffix
+            # Delete ALL existing working_image references first (since this is a new working image)
+            # This handles cases where multiple working_image refs exist with different URLs
             existing_refs = await ReferenceService.get_user_references(user_id)
-            existing_tags = [ref['tag'] for ref in existing_refs]
+            working_image_refs = [ref for ref in existing_refs if ref['tag'] == 'working_image']
             
-            final_tag = base_tag
-            counter = 1
-            while final_tag in existing_tags:
-                final_tag = f"{base_tag}{counter}"
-                counter += 1
+            if working_image_refs:
+                print(f"[DEBUG] Found {len(working_image_refs)} existing working_image references - deleting all")
+                for ref in working_image_refs:
+                    print(f"[DEBUG] Deleting working_image reference: {ref.get('image_url', 'unknown')}")
+                    await ReferenceService.delete_reference(user_id, 'working_image')
+            else:
+                print(f"[DEBUG] No existing working_image references found")
             
             # Create the reference (marked as temporary)
             await ReferenceService.create_reference(
@@ -106,17 +109,26 @@ class ReferenceService:
             
         except Exception as e:
             print(f"[ERROR] Auto-tagging failed: {e}")
-            # Create a fallback working image tag with timestamp
-            import time
-            fallback_tag = f"working_image{int(time.time() % 10000)}"
+            # Always use 'working_image' as fallback tag for consistency
+            fallback_tag = "working_image"
             
             try:
+                # Delete ALL existing working_image references first
+                existing_refs = await ReferenceService.get_user_references(user_id)
+                working_image_refs = [ref for ref in existing_refs if ref['tag'] == 'working_image']
+                
+                if working_image_refs:
+                    print(f"[DEBUG] Fallback: Found {len(working_image_refs)} existing working_image references - deleting all")
+                    for ref in working_image_refs:
+                        print(f"[DEBUG] Fallback: Deleting working_image reference: {ref.get('image_url', 'unknown')}")
+                        await ReferenceService.delete_reference(user_id, 'working_image')
+                
                 # Try to create fallback reference
                 await ReferenceService.create_reference(
                     user_id=user_id,
                     tag=fallback_tag,
                     image_url=image_url,
-                    display_name=f"Working Image {fallback_tag[-4:]}",
+                    display_name="Working Image",
                     description="Fallback tag for working image",
                     category="general",
                     source_type="temporary"  # Mark as temporary for cleanup
@@ -157,11 +169,77 @@ class ReferenceService:
                 print(f"[DEBUG] Auto-tagging failed, returning original references only")
                 return prompt, original_references
             
-            # Add working image reference to the prompt
+            # Add working image reference to the prompt with clearer face swap language
             # Insert it naturally into the prompt based on the type of request
-            if "change" in prompt.lower() and "face" in prompt.lower():
-                # Face change requests: "Change the face to @skelton" -> "Change the face to @skelton in the scene from @working_tag"
-                enhanced_prompt = f"{prompt} in the scene from @{working_tag}"
+            if ("replace" in prompt.lower() and "face" in prompt.lower()) or ("face" in prompt.lower() and "with" in prompt.lower()):
+                # Face swap requests: "Replace face with @skelton" -> "Replace face of @working_tag with the face of @skelton"
+                # Find the face source reference (non-working reference)
+                face_source_ref = None
+                for ref in original_references:
+                    if ref.tag != working_tag:
+                        face_source_ref = ref.tag
+                        break
+                
+                if face_source_ref:
+                    enhanced_prompt = f"Replace face of @{working_tag} with the face of @{face_source_ref}"
+                else:
+                    enhanced_prompt = f"Replace face of @{working_tag} with {prompt.split('with')[1].strip() if 'with' in prompt else 'the new face'}"
+            elif ("change" in prompt.lower() and "face" in prompt.lower()) or ("update" in prompt.lower() and "face" in prompt.lower()):
+                # Face change requests: "Change/Update the face to @skelton" -> "Change/Update the face of @working_tag to @skelton"
+                print(f"[DEBUG] Processing face change/update request: '{prompt}'")
+                if "to" in prompt.lower():
+                    target_face = prompt.split('to')[1].strip() if 'to' in prompt else ""
+                    print(f"[DEBUG] Extracted target_face from 'to' split: '{target_face}'")
+                elif "with" in prompt.lower():
+                    target_face = prompt.split('with')[1].strip() if 'with' in prompt else ""
+                    print(f"[DEBUG] Extracted target_face from 'with' split: '{target_face}'")
+                else:
+                    # Find the reference in the prompt
+                    face_source_ref = None
+                    for ref in original_references:
+                        if f"@{ref.tag}" in prompt:
+                            face_source_ref = f"@{ref.tag}"
+                            break
+                    target_face = face_source_ref or "the new face"
+                    print(f"[DEBUG] Found face source ref in prompt: '{target_face}'")
+                
+                # Ensure target_face includes @ if it's a reference and preserve full reference names
+                print(f"[DEBUG] Before target_face processing: '{target_face}'")
+                print(f"[DEBUG] Available references: {[ref.tag for ref in original_references]}")
+                
+                if target_face:
+                    # Remove @ if present to work with clean tag name
+                    clean_target = target_face.replace('@', '').strip()
+                    print(f"[DEBUG] Clean target tag: '{clean_target}'")
+                    
+                    # Try to match to full reference tags
+                    matched_ref = None
+                    
+                    # First try exact match
+                    for ref in original_references:
+                        if ref.tag == clean_target:
+                            matched_ref = ref.tag
+                            print(f"[DEBUG] Exact match found: '{ref.tag}'")
+                            break
+                    
+                    # If no exact match, try partial match (truncated reference)
+                    if not matched_ref:
+                        for ref in original_references:
+                            if ref.tag.startswith(clean_target) or clean_target in ref.tag:
+                                matched_ref = ref.tag
+                                print(f"[DEBUG] Partial match found: '{clean_target}' matches '{ref.tag}'")
+                                break
+                    
+                    if matched_ref:
+                        target_face = f"@{matched_ref}"
+                        print(f"[DEBUG] Final matched reference: '{target_face}'")
+                    else:
+                        # No match found, keep original but ensure @ prefix
+                        target_face = f"@{clean_target}" if clean_target else "@unknown"
+                        print(f"[DEBUG] No match found, keeping as: '{target_face}'")
+                
+                print(f"[DEBUG] Final target_face: '{target_face}'")
+                enhanced_prompt = f"Update the face of @{working_tag} with the face of {target_face}"
             elif "add" in prompt.lower() and any(ref in prompt.lower() for ref in ["@" + ref.tag for ref in original_references]):
                 # Adding character to scene: "Add @charlie" -> "Add @charlie to the scene in @working_tag"
                 enhanced_prompt = f"{prompt} to the scene in @{working_tag}"
@@ -172,15 +250,50 @@ class ReferenceService:
                 # "Add @charlie playing" -> "Add @charlie playing on @working_tag"  
                 enhanced_prompt = f"{prompt} on @{working_tag}"
             else:
-                # Generic enhancement
-                enhanced_prompt = f"{prompt} with @{working_tag}"
+                # Smart generic enhancement - replace common person references instead of just appending
+                enhanced_prompt = prompt
+                
+                # Define patterns to replace for hair styling and other operations
+                person_replacements = [
+                    ("boy", f"@{working_tag}"),
+                    ("girl", f"@{working_tag}"), 
+                    ("man", f"@{working_tag}"),
+                    ("woman", f"@{working_tag}"),
+                    ("person", f"@{working_tag}"),
+                    ("him", f"@{working_tag}"),
+                    ("her", f"@{working_tag}"),
+                    ("guy", f"@{working_tag}"),
+                    ("kid", f"@{working_tag}"),
+                    ("child", f"@{working_tag}")
+                ]
+                
+                # Check if it's hair styling to use smarter replacement
+                is_hair_styling = any(hair_keyword in prompt.lower() for hair_keyword in ["hair", "hairstyle", "hair style", "hair color", "hair colour"])
+                
+                replaced = False
+                for old_word, replacement in person_replacements:
+                    # Use word boundaries to avoid partial matches
+                    import re
+                    pattern = r'\b' + re.escape(old_word) + r'\b'
+                    if re.search(pattern, enhanced_prompt, re.IGNORECASE):
+                        enhanced_prompt = re.sub(pattern, replacement, enhanced_prompt, flags=re.IGNORECASE)
+                        replaced = True
+                        print(f"[DEBUG] Replaced '{old_word}' with '{replacement}' in prompt")
+                        break
+                
+                # If no replacement was made, fall back to appending (for non-person prompts)
+                if not replaced:
+                    enhanced_prompt = f"{prompt} with @{working_tag}"
+                    print(f"[DEBUG] No person reference found, appended working reference")
             
             # Add scene composition instruction (but don't conflict with transformations)
             if len(original_references) > 0:
-                if "change" in prompt.lower() and ("face" in prompt.lower() or "head" in prompt.lower()):
-                    # For face/head changes, preserve everything except the face
-                    enhanced_prompt += f". Keep the body, pose, and background from @{working_tag}"
-                    print(f"[DEBUG] Added partial preservation for face change with @{working_tag}")
+                if ("replace" in prompt.lower() and "face" in prompt.lower()) or ("change" in prompt.lower() and ("face" in prompt.lower() or "head" in prompt.lower())):
+                    # For face/head swaps, keep it simple - no additional instructions
+                    print(f"[DEBUG] Face swap detected - keeping prompt simple without additional composition guidance")
+                elif any(hair_keyword in prompt.lower() for hair_keyword in ["hair", "hairstyle", "hair style", "hair color", "hair colour"]):
+                    # For hair styling, don't add composition guidance - it confuses the reference roles
+                    print(f"[DEBUG] Hair styling detected - skipping composition guidance to avoid reference confusion")
                 else:
                     # For other operations, maintain general composition
                     enhanced_prompt += f". Use the composition and setting from @{working_tag}"
@@ -227,13 +340,17 @@ class ReferenceService:
         if not mentions:
             return [], []
         
+        # Deduplicate mentions to avoid duplicate references
+        unique_mentions = list(set(mentions))
+        print(f"[DEBUG] Found {len(mentions)} total mentions, {len(unique_mentions)} unique: {unique_mentions}")
+        
         reference_images = []
         missing_tags = []
         
         # Fetch user's references from database
         db = SupabaseManager()
         
-        for tag in mentions:
+        for tag in unique_mentions:
             try:
                 # Query image_references table for this user and tag
                 result = db.supabase.table('image_references').select('*').eq('user_id', user_id).eq('tag', tag).execute()
