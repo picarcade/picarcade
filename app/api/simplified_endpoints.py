@@ -68,7 +68,7 @@ async def process_simplified_request(request: SimplifiedRequest):
         )
         
         # Get model parameters
-        model_params = simplified_flow.get_model_parameters(result)
+        model_params = await simplified_flow.get_model_parameters(result)
         
         # Estimate costs (simplified)
         estimated_cost = _estimate_cost(result.model_to_use)

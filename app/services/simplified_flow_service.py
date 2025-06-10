@@ -1,21 +1,33 @@
 """
-Simplified Product Flow Service
+Simplified Product Flow Service - Sprint 3 Enhanced
 
-Based on CSV rules:
+Based on CSV rules with Sprint 3 infrastructure:
 1. User Prompts
 2. App determines Active Image, Uploaded Image, Referenced Image boolean values 
-3. LLM classifies intent and enhances prompt based on CSV rules
+3. LLM classifies intent and enhances prompt based on CSV rules (with caching & circuit breaker)
 4. Routes to appropriate model per CSV
 
-All prompt writing logic is in the LLM prompt itself.
+Sprint 3 Infrastructure Integration:
+- Distributed Redis Cache
+- Circuit Breaker Protection  
+- Rate Limiting & Cost Control
+- Analytics & Performance Monitoring
 """
 
 import asyncio
 import json
 import logging
+import time
+import os
 from typing import Dict, Any, Optional, Tuple
 from enum import Enum
 import replicate
+
+# Sprint 3: Import infrastructure components
+from app.core.cache import get_cache, cache_result
+from app.core.circuit_breaker import get_circuit_breaker, CircuitConfig, CircuitBreakerOpenError
+from app.core.rate_limiter import check_all_rate_limits, RateLimitError
+from app.core.database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +51,9 @@ class SimplifiedFlowResult:
         reasoning: str,
         active_image: bool,
         uploaded_image: bool,
-        referenced_image: bool
+        referenced_image: bool,
+        cache_hit: bool = False,
+        processing_time_ms: int = 0
     ):
         self.prompt_type = prompt_type
         self.enhanced_prompt = enhanced_prompt
@@ -49,16 +63,29 @@ class SimplifiedFlowResult:
         self.active_image = active_image
         self.uploaded_image = uploaded_image
         self.referenced_image = referenced_image
+        self.cache_hit = cache_hit
+        self.processing_time_ms = processing_time_ms
 
 
 class SimplifiedFlowService:
     """
-    Simplified flow service that implements CSV logic in a single LLM call
+    Sprint 3: Simplified flow service with production infrastructure
     """
     
     def __init__(self):
         # Use Anthropic Claude 3.7 Sonnet via Replicate for prompt processing
         self.model = "anthropic/claude-3.7-sonnet"
+        
+        # Sprint 3: Infrastructure components (initialized async)
+        self.cache = None
+        self.circuit_breaker = None
+        self.database = None
+        self._initialized = False
+        
+        # Configuration from environment
+        self.cache_ttl = int(os.getenv("INTENT_CACHE_TTL", "3600"))  # 1 hour
+        self.max_concurrent = int(os.getenv("MAX_CONCURRENT_CLASSIFICATIONS", "10"))
+        self.classification_timeout = int(os.getenv("CLASSIFICATION_TIMEOUT", "30"))
         
         # CSV-based decision matrix (updated with new scenarios)
         self.decision_matrix = {
@@ -73,22 +100,128 @@ class SimplifiedFlowService:
             (True, True, True): ("EDIT_IMAGE_REF", "Runway"),
         }
     
+    async def _ensure_initialized(self):
+        """Sprint 3: Ensure all async infrastructure components are initialized"""
+        if not self._initialized:
+            try:
+                # Initialize distributed cache
+                self.cache = await get_cache()
+                
+                # Initialize circuit breaker for Replicate API
+                circuit_config = CircuitConfig(
+                    failure_threshold=int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")),
+                    timeout_seconds=int(os.getenv("CIRCUIT_BREAKER_TIMEOUT", "60")),
+                    success_threshold=3
+                )
+                self.circuit_breaker = get_circuit_breaker("replicate_claude", circuit_config)
+                
+                # Initialize database for analytics
+                self.database = await get_database()
+                
+                self._initialized = True
+                logger.info("SimplifiedFlowService Sprint 3 infrastructure initialized")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize SimplifiedFlowService infrastructure: {e}")
+                # Continue with degraded functionality
+                self._initialized = False
+    
     async def process_user_request(
         self, 
         user_prompt: str,
         active_image: bool = False,
         uploaded_image: bool = False, 
         referenced_image: bool = False,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> SimplifiedFlowResult:
         """
-        Process user request through simplified flow:
-        1. Determine boolean flags (passed in)
-        2. Use LLM to classify intent and enhance prompt based on CSV rules
-        3. Route to appropriate model (with special rule for 2+ references → Runway)
+        Sprint 3: Process user request through simplified flow with infrastructure:
+        1. Rate limiting check
+        2. Cache lookup
+        3. LLM classification with circuit breaker
+        4. Analytics logging
+        5. Cache storage
         """
         
+        start_time = time.time()
+        await self._ensure_initialized()
+        
+        # Default user_id if not provided
+        user_id = user_id or "anonymous"
+        
         try:
+            # Sprint 3: Check rate limits before processing
+            estimated_cost = 0.02  # Claude 3.7 Sonnet cost estimate
+            
+            try:
+                allowed, rate_limit_info = await check_all_rate_limits(
+                    user_id=user_id,
+                    api_name="replicate",
+                    estimated_cost=estimated_cost
+                )
+                
+                if not allowed:
+                    logger.warning(f"Rate limit exceeded for user {user_id}")
+                    # Return fallback result
+                    result = self._create_fallback_result(
+                        user_prompt, active_image, uploaded_image, referenced_image,
+                        reason="rate_limited"
+                    )
+                    
+                    await self._log_classification(
+                        user_id=user_id,
+                        prompt=user_prompt,
+                        result=result,
+                        used_fallback=True,
+                        rate_limited=True,
+                        circuit_breaker_state="closed"
+                    )
+                    
+                    return result
+                    
+            except RateLimitError as e:
+                logger.error(f"Rate limit error for user {user_id}: {e}")
+                result = self._create_fallback_result(
+                    user_prompt, active_image, uploaded_image, referenced_image,
+                    reason="rate_limited"
+                )
+                result.reasoning += " (Rate limit exceeded)"
+                return result
+            
+            # Generate cache key
+            cache_key = self._generate_cache_key(user_prompt, active_image, uploaded_image, referenced_image, user_id)
+            
+            # Sprint 3: Check distributed cache
+            cached_result = None
+            cache_hit = False
+            if self.cache:
+                try:
+                    cached_data = await self.cache.get(cache_key)
+                    if cached_data:
+                        cached_result = self._result_from_cache_data(cached_data)
+                        cache_hit = True
+                        logger.info(f"Cache hit for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Cache get failed: {e}")
+            
+            if cached_result:
+                # Update processing time for cache hit
+                cached_result.cache_hit = True
+                cached_result.processing_time_ms = int((time.time() - start_time) * 1000)
+                
+                # Log cache hit
+                await self._log_classification(
+                    user_id=user_id,
+                    prompt=user_prompt,
+                    result=cached_result,
+                    used_fallback=False,
+                    rate_limited=False,
+                    circuit_breaker_state=self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
+                )
+                
+                return cached_result
+            
             # Count total reference images from context
             total_references = 0
             if context:
@@ -103,38 +236,92 @@ class SimplifiedFlowService:
                 
                 print(f"[DEBUG] SIMPLIFIED: Reference count - uploaded: {len(uploaded_images) if uploaded_images else 0}, prompt refs: {len(prompt_references)}, total: {total_references}")
             
-            # Determine prompt type based on CSV logic
-            prompt_type, enhanced_prompt, reasoning = await self._classify_and_enhance(
-                user_prompt, active_image, uploaded_image, referenced_image, context
+            # Try AI classification with circuit breaker protection
+            circuit_breaker_state = "unknown"
+            used_fallback = False
+            
+            try:
+                if self.circuit_breaker:
+                    circuit_breaker_state = self.circuit_breaker.state.value
+                    prompt_type, enhanced_prompt, reasoning = await self.circuit_breaker.call(
+                        self._classify_and_enhance,
+                        user_prompt, active_image, uploaded_image, referenced_image, context
+                    )
+                else:
+                    prompt_type, enhanced_prompt, reasoning = await self._classify_and_enhance(
+                        user_prompt, active_image, uploaded_image, referenced_image, context
+                    )
+                
+                # Map to model based on CSV (with special rule for 2+ references)
+                model_to_use = self._get_model_for_type(prompt_type, total_references)
+                
+                # Create successful result
+                result = SimplifiedFlowResult(
+                    prompt_type=PromptType(prompt_type),
+                    enhanced_prompt=enhanced_prompt,
+                    model_to_use=model_to_use,
+                    original_prompt=user_prompt,
+                    reasoning=reasoning,
+                    active_image=active_image,
+                    uploaded_image=uploaded_image,
+                    referenced_image=referenced_image,
+                    cache_hit=False,
+                    processing_time_ms=int((time.time() - start_time) * 1000)
+                )
+                
+                # Cache successful result
+                if self.cache:
+                    try:
+                        cache_data = self._result_to_cache_data(result)
+                        await self.cache.set(cache_key, cache_data, ttl=self.cache_ttl)
+                    except Exception as e:
+                        logger.warning(f"Cache set failed: {e}")
+                
+            except (CircuitBreakerOpenError, Exception) as e:
+                logger.warning(f"AI classification failed for user {user_id}: {e}")
+                circuit_breaker_state = self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
+                used_fallback = True
+                
+                # Create fallback result
+                result = self._create_fallback_result(
+                    user_prompt, active_image, uploaded_image, referenced_image,
+                    reason=str(e), total_references=total_references
+                )
+                result.processing_time_ms = int((time.time() - start_time) * 1000)
+            
+            # Log classification
+            await self._log_classification(
+                user_id=user_id,
+                prompt=user_prompt,
+                result=result,
+                used_fallback=used_fallback,
+                rate_limited=False,
+                circuit_breaker_state=circuit_breaker_state
             )
             
-            # Map to model based on CSV (with special rule for 2+ references)
-            model_to_use = self._get_model_for_type(prompt_type, total_references)
-            
-            return SimplifiedFlowResult(
-                prompt_type=PromptType(prompt_type),
-                enhanced_prompt=enhanced_prompt,
-                model_to_use=model_to_use,
-                original_prompt=user_prompt,
-                reasoning=reasoning,
-                active_image=active_image,
-                uploaded_image=uploaded_image,
-                referenced_image=referenced_image
-            )
+            return result
             
         except Exception as e:
-            logger.error(f"Simplified flow processing failed: {e}")
-            # Fallback to basic new image generation
-            return SimplifiedFlowResult(
-                prompt_type=PromptType.CREATE_NEW_IMAGE,
-                enhanced_prompt=user_prompt,
-                model_to_use="Flux 1.1 Pro",
-                original_prompt=user_prompt,
-                reasoning=f"Fallback due to error: {str(e)}",
-                active_image=active_image,
-                uploaded_image=uploaded_image,
-                referenced_image=referenced_image
+            logger.error(f"Unexpected error in simplified flow for user {user_id}: {e}")
+            
+            # Create error fallback
+            result = self._create_fallback_result(
+                user_prompt, active_image, uploaded_image, referenced_image,
+                reason=f"error: {str(e)}"
             )
+            result.processing_time_ms = int((time.time() - start_time) * 1000)
+            
+            # Log the failure
+            await self._log_classification(
+                user_id=user_id,
+                prompt=user_prompt,
+                result=result,
+                used_fallback=True,
+                rate_limited=False,
+                circuit_breaker_state="error"
+            )
+            
+            return result
     
     async def _classify_and_enhance(
         self, 
@@ -360,7 +547,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             return ("NEW_IMAGE_REF", enhanced_prompt, "Fallback: New image with references/uploads")
             
         # Check for edit keywords when active image is present
-        edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it", "put on", "wear"]
+        edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
         has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
         
         if active_image and not uploaded_image and not referenced_image:
@@ -426,35 +613,299 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         
         return model_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
     
-    def get_model_parameters(self, result: SimplifiedFlowResult) -> Dict[str, Any]:
-        """
-        Get model-specific parameters based on the result
-        """
+    async def get_model_parameters(self, result: SimplifiedFlowResult) -> Dict[str, Any]:
+        """Get model-specific parameters based on flow result (with caching)"""
+        
+        # Generate cache key for model parameters
+        cache_key = f"model_params:{result.model_to_use}:{result.prompt_type.value}"
+        
+        # Ensure service is initialized
+        await self._ensure_initialized()
+        
+        # Try to get from cache first
+        if self.cache:
+            try:
+                cached_params = await self.cache.get(cache_key)
+                if cached_params:
+                    # Add dynamic prompt to cached base parameters
+                    cached_params["prompt"] = result.enhanced_prompt
+                    logger.info(f"Cache HIT for model parameters: {result.model_to_use}")
+                    return cached_params
+            except Exception as e:
+                logger.warning(f"Cache get failed for model parameters: {e}")
+        
+        # Generate parameters if not cached
         base_params = {
             "prompt": result.enhanced_prompt,
             "model": result.model_to_use
         }
         
-        # Add model-specific parameters
-        if result.model_to_use == "black-forest-labs/flux-kontext-max":
+        # Model-specific parameters
+        if result.model_to_use == "black-forest-labs/flux-1.1-pro":
+            base_params.update({
+                "width": 1024,
+                "height": 1024,
+                "num_inference_steps": 28,
+                "guidance_scale": 3.5,
+                "num_outputs": 1,
+                "output_format": "jpg",
+                "output_quality": 90
+            })
+        elif result.model_to_use == "black-forest-labs/flux-kontext-max":
             base_params.update({
                 "guidance_scale": 3.5,
                 "num_inference_steps": 28,
                 "safety_tolerance": 2
             })
-        elif result.model_to_use == "black-forest-labs/flux-1.1-pro":
-            base_params.update({
-                "guidance_scale": 3.5,
-                "num_inference_steps": 25,
-                "safety_tolerance": 2
-            })
         elif result.model_to_use == "runway_gen4_image":
             base_params.update({
+                "mode": "gen4-image",
+                "aspect_ratio": "16:9"
+            })
+        else:
+            # Default parameters for unknown models
+            base_params.update({
                 "guidance_scale": 7.5,
-                "num_inference_steps": 50
+                "num_inference_steps": 20
             })
         
+        # Cache the base parameters (without prompt) for 1 hour
+        if self.cache:
+            try:
+                cache_params = {k: v for k, v in base_params.items() if k != "prompt"}
+                await self.cache.set(cache_key, cache_params, ttl=3600)
+                logger.info(f"Cached model parameters for: {result.model_to_use}")
+            except Exception as e:
+                logger.warning(f"Cache set failed for model parameters: {e}")
+        
         return base_params
+    
+    # Sprint 3: Infrastructure helper methods
+    
+    def _create_fallback_result(
+        self,
+        user_prompt: str,
+        active_image: bool,
+        uploaded_image: bool,
+        referenced_image: bool,
+        reason: str,
+        total_references: int = 0
+    ) -> SimplifiedFlowResult:
+        """Create fallback result when AI classification fails"""
+        
+        # Simple rule-based classification following CSV
+        if not active_image and not uploaded_image and not referenced_image:
+            prompt_type = "NEW_IMAGE"
+            enhanced_prompt = user_prompt
+        elif not active_image and (uploaded_image or referenced_image):
+            prompt_type = "NEW_IMAGE_REF"
+            enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+        elif active_image and not uploaded_image and not referenced_image:
+            # Check for edit intent
+            edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
+            has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
+            if has_edit_intent:
+                prompt_type = "EDIT_IMAGE"
+                enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+            else:
+                prompt_type = "NEW_IMAGE"
+                enhanced_prompt = user_prompt
+        else:
+            # active_image + (uploaded_image or referenced_image)
+            prompt_type = "EDIT_IMAGE_REF"
+            enhanced_prompt = user_prompt
+        
+        # Get model for type
+        model_to_use = self._get_model_for_type(prompt_type, total_references)
+        
+        return SimplifiedFlowResult(
+            prompt_type=PromptType(prompt_type),
+            enhanced_prompt=enhanced_prompt,
+            model_to_use=model_to_use,
+            original_prompt=user_prompt,
+            reasoning=f"Fallback classification ({reason}) based on CSV rules",
+            active_image=active_image,
+            uploaded_image=uploaded_image,
+            referenced_image=referenced_image,
+            cache_hit=False,
+            processing_time_ms=0
+        )
+    
+    def _generate_cache_key(
+        self, 
+        prompt: str, 
+        active_image: bool, 
+        uploaded_image: bool, 
+        referenced_image: bool,
+        user_id: str
+    ) -> str:
+        """Generate cache key for classification"""
+        flags_str = f"a:{active_image}_u:{uploaded_image}_r:{referenced_image}"
+        return f"simplified_flow_v3_{hash(prompt.lower())}_{hash(user_id)}_{flags_str}"
+    
+    def _result_to_cache_data(self, result: SimplifiedFlowResult) -> Dict[str, Any]:
+        """Convert result to cache-friendly data"""
+        return {
+            "prompt_type": result.prompt_type.value,
+            "enhanced_prompt": result.enhanced_prompt,
+            "model_to_use": result.model_to_use,
+            "original_prompt": result.original_prompt,
+            "reasoning": result.reasoning,
+            "active_image": result.active_image,
+            "uploaded_image": result.uploaded_image,
+            "referenced_image": result.referenced_image
+        }
+    
+    def _result_from_cache_data(self, cache_data: Dict[str, Any]) -> SimplifiedFlowResult:
+        """Convert cache data back to result"""
+        return SimplifiedFlowResult(
+            prompt_type=PromptType(cache_data["prompt_type"]),
+            enhanced_prompt=cache_data["enhanced_prompt"],
+            model_to_use=cache_data["model_to_use"],
+            original_prompt=cache_data["original_prompt"],
+            reasoning=cache_data["reasoning"],
+            active_image=cache_data["active_image"],
+            uploaded_image=cache_data["uploaded_image"],
+            referenced_image=cache_data["referenced_image"],
+            cache_hit=True,
+            processing_time_ms=0  # Will be updated
+        )
+    
+    async def _log_classification(
+        self,
+        user_id: str,
+        prompt: str,
+        result: SimplifiedFlowResult,
+        used_fallback: bool = False,
+        rate_limited: bool = False,
+        circuit_breaker_state: str = "closed"
+    ):
+        """Sprint 3: Log classification metrics to Supabase"""
+        try:
+            # Use Supabase client for analytics logging (more reliable)
+            from app.core.database import db_manager
+            await db_manager.log_intent_classification({
+                "user_id": user_id,
+                "prompt": prompt,
+                "classified_workflow": result.prompt_type.value,
+                "confidence": 0.95 if not used_fallback else 0.6,  # High confidence for successful AI classification
+                "processing_time_ms": result.processing_time_ms,
+                "used_fallback": used_fallback,
+                "cache_hit": result.cache_hit,
+                "circuit_breaker_state": circuit_breaker_state,
+                "rate_limited": rate_limited
+            })
+        except Exception as e:
+            logger.error(f"Failed to log simplified flow classification metrics: {e}")
+    
+    # Sprint 3: Health and monitoring methods
+    async def get_health(self) -> Dict[str, Any]:
+        """Get simplified flow service health status"""
+        await self._ensure_initialized()
+        
+        health = {
+            "service": "simplified_flow",
+            "status": "healthy",
+            "initialized": self._initialized,
+            "model": self.model
+        }
+        
+        # Check cache health
+        if self.cache:
+            try:
+                cache_health = await self.cache.get_health()
+                health["cache"] = cache_health
+            except Exception as e:
+                health["cache"] = {"status": "error", "error": str(e)}
+        else:
+            health["cache"] = {"status": "not_initialized"}
+        
+        # Check circuit breaker health
+        if self.circuit_breaker:
+            health["circuit_breaker"] = self.circuit_breaker.get_stats()
+        else:
+            health["circuit_breaker"] = {"status": "not_initialized"}
+        
+        return health
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get simplified flow classification statistics using Supabase client (with caching)"""
+        
+        # Ensure initialized first
+        await self._ensure_initialized()
+        
+        # Check cache first (5 minute TTL for stats)
+        cache_key = "simplified_flow_stats"
+        if self.cache:
+            try:
+                cached_stats = await self.cache.get(cache_key)
+                if cached_stats:
+                    logger.info("Cache HIT for simplified flow stats")
+                    cached_stats["cached"] = True
+                    return cached_stats
+            except Exception as e:
+                logger.warning(f"Cache get failed for stats: {e}")
+        
+        try:
+            # Use Supabase client for stats (more reliable than PostgreSQL)
+            from app.core.database import db_manager
+            from datetime import datetime, timedelta
+            
+            # Get stats from last 24 hours
+            yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+            
+            result = db_manager.supabase.table("intent_classification_logs")\
+                .select("*")\
+                .gte("created_at", yesterday)\
+                .in_("classified_workflow", ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF"])\
+                .execute()
+            
+            stats_data = None
+            if result.data:
+                total = len(result.data)
+                fallback_count = sum(1 for row in result.data if row.get('used_fallback', False))
+                cache_hits = sum(1 for row in result.data if row.get('cache_hit', False))
+                rate_limited_count = sum(1 for row in result.data if row.get('rate_limited', False))
+                
+                # Calculate averages
+                total_confidence = sum(row.get('confidence', 0) for row in result.data)
+                total_processing_time = sum(row.get('processing_time_ms', 0) for row in result.data)
+                
+                avg_confidence = total_confidence / total if total > 0 else 0
+                avg_processing_time = total_processing_time / total if total > 0 else 0
+                
+                stats_data = {
+                    "total_classifications": total,
+                    "avg_confidence": round(avg_confidence, 2),
+                    "avg_processing_time_ms": round(avg_processing_time, 2),
+                    "fallback_rate": round((fallback_count / max(total, 1)) * 100, 2),
+                    "cache_hit_rate": round((cache_hits / max(total, 1)) * 100, 2),
+                    "rate_limited_rate": round((rate_limited_count / max(total, 1)) * 100, 2),
+                    "period": "24 hours",
+                    "service": "simplified_flow",
+                    "data_source": "supabase_client",
+                    "cached": False
+                }
+            else:
+                stats_data = {
+                    "message": "No classification data available", 
+                    "service": "simplified_flow",
+                    "cached": False
+                }
+            
+            # Cache the result for 5 minutes
+            if self.cache and stats_data:
+                try:
+                    await self.cache.set(cache_key, stats_data, ttl=300)  # 5 minutes
+                    logger.info("Cached simplified flow stats")
+                except Exception as e:
+                    logger.warning(f"Cache set failed for stats: {e}")
+            
+            return stats_data
+                
+        except Exception as e:
+            logger.error(f"Failed to get simplified flow classification stats: {e}")
+            return {"error": str(e), "service": "simplified_flow", "cached": False}
 
 
 # Global instance

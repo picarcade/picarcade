@@ -15,6 +15,11 @@ pillow>=10.0.0
 python-multipart>=0.0.6
 PyJWT>=2.8.0
 
+# Sprint 3: Production Infrastructure
+redis>=4.5.0
+redis[hiredis]>=4.5.0
+asyncpg>=0.29.0
+
 # Development dependencies
 pytest>=7.0.0
 pytest-asyncio>=0.20.0

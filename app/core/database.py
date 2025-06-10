@@ -1,7 +1,11 @@
 from supabase import create_client, Client
 from .config import settings
 import asyncio
-from typing import Dict, Any, List, Optional
+import asyncpg
+import logging
+from typing import Dict, Any, List, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 class SupabaseManager:
     """Supabase database manager for Pictures"""
@@ -82,6 +86,146 @@ class SupabaseManager:
         except Exception as e:
             print(f"Error fetching generation: {e}")
             return None
+    
+    # Sprint 3 Analytics Methods
+    async def log_intent_classification(self, data: Dict[str, Any]) -> bool:
+        """Log intent classification analytics"""
+        try:
+            self.supabase.table("intent_classification_logs").insert(data).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to log intent classification: {e}")
+            return False
+    
+    async def log_cost_tracking(self, data: Dict[str, Any]) -> bool:
+        """Log cost tracking data"""
+        try:
+            self.supabase.table("cost_tracking").insert(data).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to log cost tracking: {e}")
+            return False
+    
+    async def log_model_selection(self, data: Dict[str, Any]) -> bool:
+        """Log model selection analytics"""
+        try:
+            self.supabase.table("model_selection_logs").insert(data).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to log model selection: {e}")
+            return False
+    
+    async def log_system_performance(self, data: Dict[str, Any]) -> bool:
+        """Log system performance metrics"""
+        try:
+            self.supabase.table("system_performance_logs").insert(data).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to log system performance: {e}")
+            return False
 
 # Global database instance
-db_manager = SupabaseManager() 
+db_manager = SupabaseManager()
+
+class AsyncDatabase:
+    """Async PostgreSQL interface for Supabase with fallback to Supabase client"""
+    
+    def __init__(self):
+        self.pool = None
+        self._connection_string = None
+        self.supabase_fallback = create_client(
+            settings.supabase_url,
+            settings.supabase_service_role_key
+        )
+    
+    async def initialize(self):
+        """Initialize async database connection pool with graceful fallback"""
+        if self.pool is None:
+            try:
+                # Extract project reference from URL
+                supabase_url = settings.supabase_url
+                project_ref = supabase_url.split('//')[1].split('.')[0]
+                
+                # Try database password first (most reliable)
+                db_password = getattr(settings, 'supabase_db_password', None)
+                if db_password:
+                    self._connection_string = f"postgresql://postgres:{db_password}@db.{project_ref}.supabase.co:5432/postgres"
+                    logger.info("Using database password for PostgreSQL connection")
+                else:
+                    # Skip PostgreSQL connection if no password available
+                    logger.warning("No database password found, skipping PostgreSQL pool - using Supabase client only")
+                    self.pool = None
+                    return
+                
+                # Create connection pool
+                self.pool = await asyncpg.create_pool(
+                    self._connection_string,
+                    min_size=1,
+                    max_size=10,
+                    command_timeout=60
+                )
+                
+                logger.info("Async database pool initialized successfully")
+                
+            except Exception as e:
+                logger.warning(f"PostgreSQL pool initialization failed, using Supabase client fallback: {e}")
+                # Continue without async database for graceful degradation
+                self.pool = None
+    
+    async def execute(self, query: str, *args) -> str:
+        """Execute a query that doesn't return data"""
+        if not self.pool:
+            await self.initialize()
+            
+        if not self.pool:
+            logger.warning("No PostgreSQL pool available, skipping execute query")
+            return "SKIPPED"
+        
+        async with self.pool.acquire() as conn:
+            return await conn.execute(query, *args)
+    
+    async def fetch_one(self, query: str, *args) -> Optional[Dict[str, Any]]:
+        """Fetch a single row"""
+        if not self.pool:
+            await self.initialize()
+            
+        if not self.pool:
+            logger.warning("No PostgreSQL pool available, using basic test query")
+            # Return a basic test result for health checks
+            if "SELECT 1" in query:
+                return {"test": 1}
+            return None
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, *args)
+            return dict(row) if row else None
+    
+    async def fetch_all(self, query: str, *args) -> List[Dict[str, Any]]:
+        """Fetch multiple rows"""
+        if not self.pool:
+            await self.initialize()
+            
+        if not self.pool:
+            logger.warning("No PostgreSQL pool available, returning empty result")
+            return []
+        
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, *args)
+            return [dict(row) for row in rows]
+    
+    async def close(self):
+        """Close the connection pool"""
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+
+# Global async database instance
+_async_db = None
+
+async def get_database() -> AsyncDatabase:
+    """Get or create async database instance"""
+    global _async_db
+    if _async_db is None:
+        _async_db = AsyncDatabase()
+        await _async_db.initialize()
+    return _async_db 

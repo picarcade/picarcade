@@ -2,7 +2,7 @@ import asyncio
 import time
 import uuid
 from typing import Dict, Any, Optional
-from app.services.intent_classifier import IntentClassifier
+from app.services.simplified_flow_service import simplified_flow
 from app.services.model_selector import ModelSelector
 from app.services.reference_service import ReferenceService
 from app.services.model_router import ModelRouter
@@ -16,7 +16,7 @@ class EnhancedWorkflowService:
     """Sprint 2: Enhanced orchestration service with web search and virtual try-on"""
     
     def __init__(self):
-        self.intent_classifier = IntentClassifier()
+        self.simplified_flow = simplified_flow  # Use simplified flow instead of IntentClassifier
         self.model_selector = ModelSelector()
         self.reference_service = ReferenceService()
         self.model_router = ModelRouter()
@@ -51,8 +51,41 @@ class EnhancedWorkflowService:
             # Step 1: Build context
             context = await self._build_context(user_id, working_image_url)
             
-            # Step 2: Classify intent using AI with rate limiting
-            intent = await self.intent_classifier.classify_intent(prompt, context, user_id)
+            # Step 2: Classify intent using simplified flow with Sprint 3 infrastructure
+            # Convert context to simplified flow format
+            active_image = bool(context.get("has_working_image", False))
+            uploaded_image = bool(context.get("working_images"))
+            referenced_image = False  # Could be enhanced to detect references in prompt
+            
+            flow_result = await self.simplified_flow.process_user_request(
+                user_prompt=prompt,
+                active_image=active_image,
+                uploaded_image=uploaded_image,
+                referenced_image=referenced_image,
+                context=context,
+                user_id=user_id
+            )
+            
+            # Convert simplified flow result to IntentClassification for compatibility
+            intent = IntentClassification(
+                workflow_type=WorkflowType.IMAGE_GENERATION,  # Map from simplified flow types
+                confidence=0.9 if not flow_result.cache_hit else 0.95,
+                reasoning=flow_result.reasoning,
+                requires_web_search=False,  # Simplified flow doesn't use web search yet
+                web_search_query=None,
+                enhancement_needed=False
+            )
+            
+            # Map simplified flow types to workflow types
+            if flow_result.prompt_type.value == "NEW_IMAGE":
+                intent.workflow_type = WorkflowType.IMAGE_GENERATION
+            elif flow_result.prompt_type.value == "NEW_IMAGE_REF":
+                intent.workflow_type = WorkflowType.REFERENCE_STYLING
+            elif flow_result.prompt_type.value == "EDIT_IMAGE":
+                intent.workflow_type = WorkflowType.IMAGE_EDITING
+            elif flow_result.prompt_type.value == "EDIT_IMAGE_REF":
+                intent.workflow_type = WorkflowType.REFERENCE_STYLING
+            
             self.metrics["classifications"] += 1
             
             # Step 3: Check for web search requirements (Sprint 2)

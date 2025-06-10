@@ -5,6 +5,7 @@ Optimizes prompts specifically for Flux Kontext Max following best practices.
 
 import asyncio
 import logging
+import hashlib
 from typing import Dict, Any, Optional
 import replicate
 
@@ -15,6 +16,24 @@ class PromptEnhancer:
     
     def __init__(self):
         self.model = "anthropic/claude-3.5-haiku"
+        self.cache = None  # Will be initialized on first use
+        
+    async def _get_cache(self):
+        """Get Redis cache instance (lazy initialization)"""
+        if not self.cache:
+            try:
+                from app.core.cache import get_cache
+                self.cache = await get_cache()
+            except Exception as e:
+                logger.warning(f"Cache not available for prompt enhancement: {e}")
+                self.cache = None
+        return self.cache
+        
+    def _generate_cache_key(self, original_prompt: str, edit_type: str, has_working_image: bool) -> str:
+        """Generate cache key for prompt enhancement"""
+        # Create key from prompt content and context
+        key_data = f"prompt_enhance:{original_prompt}:{edit_type}:{has_working_image}"
+        return f"prompt_enhance:{hashlib.md5(key_data.encode()).hexdigest()}"
         
     async def enhance_flux_kontext_prompt(
         self, 
@@ -24,7 +43,7 @@ class PromptEnhancer:
         context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Enhance a prompt for Flux Kontext Max using Claude AI
+        Enhance a prompt for Flux Kontext Max using Claude AI (with caching)
         
         Args:
             original_prompt: The user's original prompt
@@ -38,7 +57,21 @@ class PromptEnhancer:
         
         # Quick check - if prompt is already detailed (>15 words), return as-is
         if len(original_prompt.split()) > 15:
+            logger.info(f"Prompt already detailed ({len(original_prompt.split())} words), skipping enhancement")
             return original_prompt
+            
+        # Check cache first
+        cache = await self._get_cache()
+        cache_key = self._generate_cache_key(original_prompt, edit_type, has_working_image)
+        
+        if cache:
+            try:
+                cached_enhancement = await cache.get(cache_key)
+                if cached_enhancement:
+                    logger.info(f"Cache HIT for prompt enhancement: '{original_prompt}' → '{cached_enhancement}'")
+                    return cached_enhancement
+            except Exception as e:
+                logger.warning(f"Cache get failed for prompt enhancement: {e}")
             
         try:
             enhancement_prompt = self._build_enhancement_prompt(
@@ -52,6 +85,14 @@ class PromptEnhancer:
                 logger.warning(f"Enhanced prompt shorter than original, using original")
                 return original_prompt
                 
+            # Cache the result (24 hour TTL)
+            if cache and enhanced != original_prompt:
+                try:
+                    await cache.set(cache_key, enhanced, ttl=86400)  # 24 hours
+                    logger.info(f"Cached prompt enhancement: '{original_prompt}' → '{enhanced}'")
+                except Exception as e:
+                    logger.warning(f"Cache set failed for prompt enhancement: {e}")
+                    
             logger.info(f"Enhanced prompt: '{original_prompt}' → '{enhanced}'")
             return enhanced
             

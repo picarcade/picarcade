@@ -1,14 +1,36 @@
+"""
+DEPRECATED: IntentClassifier has been replaced by SimplifiedFlowService
+
+This file remains for backward compatibility but is no longer used in production.
+The new simplified flow service provides:
+- Better CSV-based decision making
+- Integrated Sprint 3 infrastructure (Redis cache, circuit breaker, rate limiting)
+- More reliable prompt enhancement
+- Simplified architecture
+
+Use app.services.simplified_flow_service.SimplifiedFlowService instead.
+"""
+
 import asyncio
 import json
 import re
 import random
 import time
+import logging
 from typing import Dict, Any, Optional, Callable
 from functools import wraps
 from datetime import datetime, timedelta
 import replicate
 from app.models.workflows import WorkflowType, IntentClassification
 import os
+
+# Sprint 3: Import infrastructure components
+from app.core.cache import get_cache, cache_result
+from app.core.circuit_breaker import get_circuit_breaker, CircuitConfig, CircuitBreakerOpenError
+from app.core.rate_limiter import check_all_rate_limits, RateLimitError
+from app.core.database import get_database
+
+logger = logging.getLogger(__name__)
 
 def retry_with_exponential_backoff(max_retries: int = 3, base_delay: float = 1.0):
     """Retry decorator with exponential backoff and jitter"""
@@ -35,20 +57,21 @@ def retry_with_exponential_backoff(max_retries: int = 3, base_delay: float = 1.0
     return decorator
 
 class IntentClassifier:
-    """Sprint 1: Basic AI-powered intent classification (will be enhanced in Sprint 3)"""
+    """Sprint 3: Production-ready AI-powered intent classification with infrastructure"""
     
     def __init__(self):
         # Using Claude 3.5 Haiku via Replicate
         self.model = "anthropic/claude-3.5-haiku"
         
-        # Sprint 1: Simple in-memory cache (will be replaced with Redis in Sprint 3)
-        self.cache = {}
-        self.cache_ttl = 3600  # 1 hour
-        self.cache_timestamps = {}
+        # Sprint 3: Initialize infrastructure components
+        self.cache = None  # Will be initialized async
+        self.circuit_breaker = None  # Will be initialized async
+        self.database = None  # Will be initialized async
         
-        # Sprint 3 additions (commented out for now):
-        # self.circuit_breaker = CircuitBreaker(...)
-        # self.rate_limiter = RateLimiter(...)
+        # Configuration from environment
+        self.cache_ttl = int(os.getenv("INTENT_CACHE_TTL", "3600"))  # 1 hour
+        self.max_concurrent = int(os.getenv("MAX_CONCURRENT_CLASSIFICATIONS", "10"))
+        self.classification_timeout = int(os.getenv("CLASSIFICATION_TIMEOUT", "30"))
         
         # Sprint 2: Enhanced fallback patterns with better virtual try-on detection
         self.fallback_patterns = {
@@ -71,6 +94,35 @@ class IntentClassifier:
             WorkflowType.IMAGE_ENHANCEMENT: ["enhance", "improve", "upscale", "sharpen"],
             WorkflowType.STYLE_TRANSFER: ["style", "artistic", "painting", "sketch", "cartoon", "renaissance", "filters"]
         }
+        
+        # Initialize async (called once)
+        self._initialized = False
+    
+    async def _ensure_initialized(self):
+        """Ensure all async components are initialized"""
+        if not self._initialized:
+            try:
+                # Initialize distributed cache
+                self.cache = await get_cache()
+                
+                # Initialize circuit breaker for Replicate API
+                circuit_config = CircuitConfig(
+                    failure_threshold=int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")),
+                    timeout_seconds=int(os.getenv("CIRCUIT_BREAKER_TIMEOUT", "60")),
+                    success_threshold=3
+                )
+                self.circuit_breaker = get_circuit_breaker("replicate_claude", circuit_config)
+                
+                # Initialize database for analytics
+                self.database = await get_database()
+                
+                self._initialized = True
+                logger.info("IntentClassifier Sprint 3 infrastructure initialized")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize IntentClassifier infrastructure: {e}")
+                # Continue with degraded functionality
+                self._initialized = False
     
     def _check_replicate_token(self):
         """Check if Replicate token is available"""
@@ -86,37 +138,138 @@ class IntentClassifier:
         user_id: Optional[str] = None
     ) -> IntentClassification:
         """
-        Sprint 1: Basic classification with simple caching
-        (Sprint 3 will add rate limiting and circuit breaker protection)
+        Sprint 3: Production classification with rate limiting, caching, and circuit breaker
         """
+        start_time = time.time()
+        await self._ensure_initialized()
         
-        # Generate cache key
-        cache_key = self._generate_cache_key(prompt, context)
+        # Default user_id if not provided
+        user_id = user_id or "anonymous"
         
-        # Check simple in-memory cache first
-        if cache_key in self.cache:
-            timestamp = self.cache_timestamps.get(cache_key, 0)
-            if time.time() - timestamp < self.cache_ttl:
-                return self.cache[cache_key]
-            else:
-                # Clean up expired cache entry
-                del self.cache[cache_key]
-                del self.cache_timestamps[cache_key]
+        # Estimate cost for rate limiting (approximate)
+        estimated_cost = 0.01  # Small cost for Claude 3.5 Haiku
         
         try:
-            # Try AI classification (Sprint 1: direct call, Sprint 3: with circuit breaker)
-            result = await self._ai_classify(prompt, context)
+            # Sprint 3: Check rate limits before processing
+            allowed, rate_limit_info = await check_all_rate_limits(
+                user_id=user_id,
+                api_name="replicate",
+                estimated_cost=estimated_cost
+            )
             
-            # Cache successful result (Sprint 1: in-memory, Sprint 3: Redis)
-            self.cache[cache_key] = result
-            self.cache_timestamps[cache_key] = time.time()
+            if not allowed:
+                logger.warning(f"Rate limit exceeded for user {user_id}")
+                await self._log_classification(
+                    user_id=user_id,
+                    prompt=prompt,
+                    classified_workflow=WorkflowType.IMAGE_GENERATION.value,
+                    confidence=0.3,
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    used_fallback=True,
+                    cache_hit=False,
+                    circuit_breaker_state="closed",
+                    rate_limited=True
+                )
+                
+                # Return fallback result with rate limit info
+                result = self._fallback_classify(prompt, context, reason="rate_limited")
+                result.reasoning += f" (Rate limited: {rate_limit_info['user']['requests']['remaining']} requests remaining)"
+                return result
+            
+            # Generate cache key
+            cache_key = self._generate_cache_key(prompt, context, user_id)
+            
+            # Sprint 3: Check distributed cache
+            cached_result = None
+            cache_hit = False
+            if self.cache:
+                try:
+                    cached_data = await self.cache.get(cache_key)
+                    if cached_data:
+                        cached_result = IntentClassification(**cached_data)
+                        cache_hit = True
+                        logger.info(f"Cache hit for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Cache get failed: {e}")
+            
+            if cached_result:
+                # Log cache hit
+                await self._log_classification(
+                    user_id=user_id,
+                    prompt=prompt,
+                    classified_workflow=cached_result.workflow_type.value,
+                    confidence=cached_result.confidence,
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    used_fallback=False,
+                    cache_hit=True,
+                    circuit_breaker_state=self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
+                )
+                return cached_result
+            
+            # Try AI classification with circuit breaker protection
+            circuit_breaker_state = "unknown"
+            used_fallback = False
+            
+            try:
+                if self.circuit_breaker:
+                    circuit_breaker_state = self.circuit_breaker.state.value
+                    result = await self.circuit_breaker.call(self._ai_classify, prompt, context)
+                else:
+                    result = await self._ai_classify(prompt, context)
+                
+                # Cache successful result
+                if self.cache:
+                    try:
+                        await self.cache.set(cache_key, result.dict(), ttl=self.cache_ttl)
+                    except Exception as e:
+                        logger.warning(f"Cache set failed: {e}")
+                
+            except (CircuitBreakerOpenError, Exception) as e:
+                logger.warning(f"AI classification failed for user {user_id}: {e}")
+                circuit_breaker_state = self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
+                used_fallback = True
+                result = self._fallback_classify(prompt, context, reason=str(e))
+            
+            # Log classification
+            await self._log_classification(
+                user_id=user_id,
+                prompt=prompt,
+                classified_workflow=result.workflow_type.value,
+                confidence=result.confidence,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                used_fallback=used_fallback,
+                cache_hit=cache_hit,
+                circuit_breaker_state=circuit_breaker_state,
+                rate_limited=False
+            )
             
             return result
             
+        except RateLimitError as e:
+            logger.error(f"Rate limit error for user {user_id}: {e}")
+            # Return fallback with rate limit message
+            result = self._fallback_classify(prompt, context, reason="rate_limited")
+            result.reasoning += " (Rate limit exceeded)"
+            return result
+            
         except Exception as e:
-            print(f"[WARNING] AI classification failed: {e}")
-            # Fall back to pattern matching
-            return self._fallback_classify(prompt, context, reason=str(e))
+            logger.error(f"Unexpected error in classification for user {user_id}: {e}")
+            
+            # Log the failure
+            await self._log_classification(
+                user_id=user_id,
+                prompt=prompt,
+                classified_workflow=WorkflowType.IMAGE_GENERATION.value,
+                confidence=0.3,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                used_fallback=True,
+                cache_hit=False,
+                circuit_breaker_state="error",
+                rate_limited=False
+            )
+            
+            # Return safe fallback
+            return self._fallback_classify(prompt, context, reason=f"error: {str(e)}")
     
     @retry_with_exponential_backoff(max_retries=2, base_delay=0.5)
     async def _ai_classify(self, prompt: str, context: Optional[Dict[str, Any]]) -> IntentClassification:
@@ -309,6 +462,36 @@ Respond in JSON format only:
             enhancement_needed=len(prompt.split()) < 5
         )
     
+    async def _log_classification(
+        self,
+        user_id: str,
+        prompt: str,
+        classified_workflow: str,
+        confidence: float,
+        processing_time_ms: int,
+        used_fallback: bool = False,
+        cache_hit: bool = False,
+        circuit_breaker_state: str = "closed",
+        rate_limited: bool = False
+    ):
+        """Sprint 3: Log classification metrics to Supabase"""
+        if not self.database:
+            return
+        
+        try:
+            await self.database.execute(
+                """
+                INSERT INTO intent_classification_logs 
+                (user_id, prompt, classified_workflow, confidence, processing_time_ms, 
+                 used_fallback, cache_hit, circuit_breaker_state, rate_limited)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """,
+                user_id, prompt, classified_workflow, confidence, processing_time_ms,
+                used_fallback, cache_hit, circuit_breaker_state, rate_limited
+            )
+        except Exception as e:
+            logger.error(f"Failed to log classification metrics: {e}")
+    
     def _contains_suspicious_content(self, prompt: str) -> bool:
         """Check for potentially malicious or inappropriate content"""
         
@@ -328,14 +511,15 @@ Respond in JSON format only:
         
         return False
     
-    def _generate_cache_key(self, prompt: str, context: Optional[Dict[str, Any]]) -> str:
+    def _generate_cache_key(self, prompt: str, context: Optional[Dict[str, Any]], user_id: str) -> str:
         """Generate cache key for classification"""
         context_str = ""
         if context:
             has_images = bool(context.get("working_images") or context.get("uploaded_images"))
             context_str = f"_images:{has_images}"
         
-        return f"intent_{hash(prompt.lower())}{context_str}"
+        # Include user_id in cache key for user-specific caching
+        return f"intent_v3_{hash(prompt.lower())}_{hash(user_id)}{context_str}"
     
     def _generate_fallback_search_query(self, prompt_lower: str) -> str:
         """Sprint 2: Generate web search query for fallback classification"""
@@ -378,4 +562,71 @@ Respond in JSON format only:
         if context.get("uploaded_images"):
             parts.append(f"User uploaded {len(context['uploaded_images'])} new images")
         
-        return "; ".join(parts) if parts else "No additional context" 
+        return "; ".join(parts) if parts else "No additional context"
+    
+    # Sprint 3: Health and monitoring methods
+    async def get_health(self) -> Dict[str, Any]:
+        """Get classifier health status"""
+        await self._ensure_initialized()
+        
+        health = {
+            "classifier": "healthy",
+            "initialized": self._initialized,
+            "model": self.model
+        }
+        
+        # Check cache health
+        if self.cache:
+            try:
+                cache_health = await self.cache.get_health()
+                health["cache"] = cache_health
+            except Exception as e:
+                health["cache"] = {"status": "error", "error": str(e)}
+        else:
+            health["cache"] = {"status": "not_initialized"}
+        
+        # Check circuit breaker health
+        if self.circuit_breaker:
+            health["circuit_breaker"] = self.circuit_breaker.get_stats()
+        else:
+            health["circuit_breaker"] = {"status": "not_initialized"}
+        
+        return health
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get classification statistics"""
+        if not self.database:
+            return {"error": "Database not available"}
+        
+        try:
+            # Get classification stats from last 24 hours
+            stats = await self.database.fetch_one(
+                """
+                SELECT 
+                    COUNT(*) as total_classifications,
+                    AVG(confidence) as avg_confidence,
+                    AVG(processing_time_ms) as avg_processing_time,
+                    SUM(CASE WHEN used_fallback THEN 1 ELSE 0 END) as fallback_count,
+                    SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END) as cache_hits,
+                    SUM(CASE WHEN rate_limited THEN 1 ELSE 0 END) as rate_limited_count
+                FROM intent_classification_logs 
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                """
+            )
+            
+            if stats:
+                return {
+                    "total_classifications": stats["total_classifications"],
+                    "avg_confidence": round(float(stats["avg_confidence"] or 0), 2),
+                    "avg_processing_time_ms": round(float(stats["avg_processing_time"] or 0), 2),
+                    "fallback_rate": round((stats["fallback_count"] / max(stats["total_classifications"], 1)) * 100, 2),
+                    "cache_hit_rate": round((stats["cache_hits"] / max(stats["total_classifications"], 1)) * 100, 2),
+                    "rate_limited_rate": round((stats["rate_limited_count"] / max(stats["total_classifications"], 1)) * 100, 2),
+                    "period": "24 hours"
+                }
+            else:
+                return {"message": "No classification data available"}
+                
+        except Exception as e:
+            logger.error(f"Failed to get classification stats: {e}")
+            return {"error": str(e)} 

@@ -110,7 +110,8 @@ async def generate_content(
                 "session_id": effective_session_id,
                 "working_image": current_working_image,
                 "uploaded_images": request.uploaded_images or []
-            }
+            },
+            user_id=request.user_id  # Pass user_id for Sprint 3 infrastructure
         )
         
         print(f"[DEBUG] SIMPLIFIED: Flow result - Type: {flow_result.prompt_type.value}, Model: {flow_result.model_to_use}")
@@ -200,7 +201,7 @@ async def generate_content(
         print(f"[DEBUG] SIMPLIFIED: Using CSV-based model routing")
         
         # Get model parameters from simplified flow
-        model_params = simplified_flow.get_model_parameters(flow_result)
+        model_params = await simplified_flow.get_model_parameters(flow_result)
         
         # Create routing decision using simplified flow result
         routing_decision = {

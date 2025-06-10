@@ -18,6 +18,19 @@ class SupabaseSessionManager:
         
         # Enable more verbose logging for session debugging
         self.verbose_logging = os.getenv("SESSION_DEBUG", "false").lower() == "true"
+        
+        self.cache = None  # Redis cache for session data
+    
+    async def _get_cache(self):
+        """Get Redis cache instance (lazy initialization)"""
+        if not self.cache:
+            try:
+                from app.core.cache import get_cache
+                self.cache = await get_cache()
+            except Exception as e:
+                print(f"[WARNING] Cache not available for sessions: {e}")
+                self.cache = None
+        return self.cache
     
     async def create_session_tables(self):
         """Create sessions table if it doesn't exist"""
@@ -141,100 +154,116 @@ class SupabaseSessionManager:
             return False
     
     async def get_current_working_image(self, session_id: str) -> Optional[str]:
-        """Get the current working image for a session"""
+        """Get current working image for session (with caching)"""
         if not session_id:
-            print(f"[DEBUG] SessionManager: No session_id provided")
             return None
         
+        # Check cache first
+        cache = await self._get_cache()
+        cache_key = f"session_image:{session_id}"
+        
+        if cache:
+            try:
+                cached_image = await cache.get(cache_key)
+                if cached_image:
+                    print(f"[DEBUG] Cache HIT for session image: {session_id}")
+                    return cached_image
+            except Exception as e:
+                print(f"[WARNING] Cache get failed for session: {e}")
+        
+        # Query database if not cached
+        print(f"[DEBUG] SessionManager: Querying for session_id: {session_id}")
+        
         try:
-            print(f"[DEBUG] SessionManager: Querying for session_id: {session_id}")
-            result = self.supabase.table("user_sessions")\
+            response = self.supabase.table("user_sessions")\
                 .select("current_working_image, expires_at")\
                 .eq("session_id", session_id)\
                 .single()\
                 .execute()
             
-            print(f"[DEBUG] SessionManager: Query result: {result.data}")
-            
-            if result.data:
-                # Check if session has expired  
-                expires_at_str = result.data["expires_at"]
-                print(f"[DEBUG] SessionManager: Raw expires_at: {expires_at_str}")
+            if response.data:
+                print(f"[DEBUG] SessionManager: Query result: {response.data}")
                 
-                # Handle timezone parsing more robustly
-                try:
-                    if expires_at_str.endswith('Z'):
-                        expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-                    elif '+00:00' in expires_at_str:
-                        expires_at = datetime.fromisoformat(expires_at_str)
-                    else:
-                        # Assume UTC if no timezone info
-                        expires_at = datetime.fromisoformat(expires_at_str).replace(tzinfo=timezone.utc)
+                expires_at_str = response.data.get("expires_at")
+                current_working_image = response.data.get("current_working_image")
+                
+                if expires_at_str:
+                    from datetime import datetime
+                    print(f"[DEBUG] SessionManager: Raw expires_at: {expires_at_str}")
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    current_time = datetime.now(expires_at.tzinfo)
                     
-                    current_time = datetime.utcnow().replace(tzinfo=timezone.utc)
                     print(f"[DEBUG] SessionManager: expires_at: {expires_at}, current_time: {current_time}")
                     
-                    if expires_at < current_time:
-                        print(f"[DEBUG] SessionManager: Session {session_id} expired, clearing")
-                        await self.clear_session(session_id)
+                    if current_time > expires_at:
+                        print(f"[DEBUG] SessionManager: Session {session_id} expired")
                         return None
-                        
-                except Exception as tz_error:
-                    print(f"[DEBUG] SessionManager: Timezone parsing error: {tz_error}, assuming session valid")
                 
-                working_image = result.data.get("current_working_image")
-                print(f"[DEBUG] SessionManager: Retrieved working image for {session_id}: {working_image}")
-                return working_image
+                if current_working_image:
+                    # Cache the result for 10 minutes
+                    if cache:
+                        try:
+                            await cache.set(cache_key, current_working_image, ttl=600)
+                            print(f"[DEBUG] Cached session image for: {session_id}")
+                        except Exception as e:
+                            print(f"[WARNING] Cache set failed for session: {e}")
+                    
+                    print(f"[DEBUG] SessionManager: Retrieved working image for {session_id}: {current_working_image}")
+                    return current_working_image
+                else:
+                    print(f"[DEBUG] SessionManager: No working image for session {session_id}")
+                    return None
             else:
                 print(f"[DEBUG] SessionManager: Session {session_id} not found")
                 return None
                 
         except Exception as e:
-            print(f"[DEBUG] SessionManager: Error retrieving working image: {e}")
-            import traceback
-            print(f"[DEBUG] SessionManager: Full traceback: {traceback.format_exc()}")
+            print(f"[ERROR] SessionManager: Error retrieving session {session_id}: {e}")
             return None
     
-    async def set_current_working_image(self, session_id: str, image_url: str, user_id: str = None):
-        """Set the current working image for a session"""
-        if not session_id:
-            print(f"[DEBUG] SessionManager: No session_id provided for setting working image")
-            return
-        
-        print(f"[DEBUG] SessionManager: Setting working image for {session_id}: {image_url}")
+    async def set_current_working_image(self, session_id: str, image_url: str, user_id: str) -> bool:
+        """Set current working image for session (and update cache)"""
+        if not session_id or not image_url:
+            return False
         
         try:
-            expires_at = datetime.utcnow() + timedelta(seconds=self.session_timeout)
+            from datetime import datetime, timedelta
             
-            # Try to update existing session first
-            update_result = self.supabase.table("user_sessions")\
-                .update({
-                    "current_working_image": image_url,
-                    "user_id": user_id,
-                    "expires_at": expires_at.isoformat(),
-                    "updated_at": datetime.utcnow().isoformat()
-                })\
-                .eq("session_id", session_id)\
-                .execute()
+            # Set expiry to 1 hour from now
+            expires_at = datetime.utcnow() + timedelta(hours=1)
             
-            # If no rows updated, create new session
-            if not update_result.data:
-                print(f"[DEBUG] SessionManager: No existing session found, creating new one")
-                session_data = {
+            # Update or insert session
+            response = self.supabase.table("user_sessions")\
+                .upsert({
                     "session_id": session_id,
                     "user_id": user_id,
                     "current_working_image": image_url,
-                    "metadata": {},
-                    "expires_at": expires_at.isoformat()
-                }
-                result = self.supabase.table("user_sessions").insert(session_data).execute()
-                print(f"[DEBUG] SessionManager: Created new session with working image: {result.data}")
+                    "expires_at": expires_at.isoformat() + "Z",
+                    "updated_at": datetime.utcnow().isoformat() + "Z"
+                })\
+                .execute()
             
-            print(f"[DEBUG] SessionManager: Session {session_id} updated successfully")
-            
+            if response.data:
+                print(f"[DEBUG] SessionManager: Session {session_id} updated successfully")
+                
+                # Update cache
+                cache = await self._get_cache()
+                if cache:
+                    try:
+                        cache_key = f"session_image:{session_id}"
+                        await cache.set(cache_key, image_url, ttl=600)  # 10 minutes
+                        print(f"[DEBUG] Updated cache for session: {session_id}")
+                    except Exception as e:
+                        print(f"[WARNING] Cache update failed for session: {e}")
+                
+                return True
+            else:
+                print(f"[ERROR] SessionManager: Failed to update session {session_id}")
+                return False
+                
         except Exception as e:
-            if self.verbose_logging:
-                print(f"[DEBUG] SessionManager: Error setting working image: {e}")
+            print(f"[ERROR] SessionManager: Error setting working image: {e}")
+            return False
     
     async def clear_session(self, session_id: str):
         """Clear a session"""
