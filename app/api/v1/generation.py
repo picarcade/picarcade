@@ -200,8 +200,28 @@ async def generate_content(
         # Phase 2: Route to optimal model - SIMPLIFIED using CSV-based decision
         print(f"[DEBUG] SIMPLIFIED: Using CSV-based model routing")
         
+        # Build context for model parameters
+        context = {
+            "uploaded_images": request.uploaded_images or [],
+            "reference_images": []
+        }
+        
+        # Add reference images from request if they exist
+        if hasattr(request, 'reference_images') and request.reference_images:
+            for ref_img in request.reference_images:
+                context["reference_images"].append({
+                    "url": ref_img.uri,
+                    "tag": ref_img.tag
+                })
+        
+        print(f"[DEBUG] API: Context for model parameters: {context}")
+        print(f"[DEBUG] API: Flow result type: {flow_result.prompt_type.value}")
+        print(f"[DEBUG] API: Model to use: {flow_result.model_to_use}")
+        
         # Get model parameters from simplified flow
-        model_params = await simplified_flow.get_model_parameters(flow_result)
+        model_params = await simplified_flow.get_model_parameters(flow_result, context)
+        
+        print(f"[DEBUG] API: Final model parameters: {model_params}")
         
         # Create routing decision using simplified flow result
         routing_decision = {
@@ -433,10 +453,16 @@ async def generate_content(
             # Don't override the type if it was already set by the model router (e.g., "image_to_video")
             if "type" not in parameters and 'intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value == "generate_video":
                 parameters["type"] = "video"
-        elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model:
+        elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model or "minimax" in selected_model:
             print(f"[DEBUG] API: Using FRESH ReplicateGenerator for {selected_model}")
             generator = get_replicate_generator()  # Create fresh instance!
             parameters["model"] = selected_model
+            
+            # For video models that need input images, ensure the working image is passed
+            if "video" in selected_model and current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+                print(f"[DEBUG] API: Video model needs input image - setting from working image: {current_working_image}")
+                parameters["image"] = current_working_image
+                parameters["uploaded_image"] = current_working_image
         else:
             print(f"[DEBUG] API: No matching generator found for {selected_model}, falling back to FRESH ReplicateGenerator with flux-1.1-pro")
             # Default fallback

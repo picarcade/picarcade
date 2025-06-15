@@ -66,7 +66,7 @@ class BasicIntentParser:
         self.audio_keywords = [
             "audio", "sound", "music", "voice", "narration", "speaking", 
             "talking", "dialogue", "soundtrack", "song", "singing",
-            "tell us", "says", "excitedly telling", "shouts", "speaks",
+            "tell us", "says", "saying", "said", "tells", "telling", "excitedly telling", "shouts", "speaks",
             "announces", "whispers", "screams", "breaking news"
         ]
     

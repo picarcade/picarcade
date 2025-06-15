@@ -58,25 +58,25 @@ class ModelSelector:
         # Sprint 2: Enhanced video models with granular workflows
         self.video_models = {
             WorkflowType.VIDEO_GENERATION: {
-                "primary": "google/veo-3",  # Premium video with audio support
-                "fallback": ["google/veo-2", "minimax/video-01"],
+                "primary": "google/veo-3",  # Premium text-to-video with audio support only
+                "fallback": ["minimax/video-01"],
                 "cost_per_second": 0.75,
                 "max_duration": 10,
-                "features": ["audio_support", "high_quality", "cinematic"],
+                "features": ["audio_support", "high_quality", "cinematic", "text_to_video_only"],
                 "recommended_for": ["music_videos", "cinematic_scenes", "premium_content"]
             },
             WorkflowType.IMAGE_TO_VIDEO: {
-                "primary": "lightricks/ltx-video",  # Optimized for image animation
-                "fallback": ["minimax/video-01", "wavespeedai/wan-2.1-i2v-720p"],
-                "cost_per_second": 0.20,
-                "max_duration": 10,
-                "features": ["image_animation", "smooth_transitions", "cost_effective"],
-                "recommended_for": ["photo_animation", "still_to_motion", "social_media"]
+                "primary": "minimax/video-01",  # MiniMax supports image-to-video with first_frame_image
+                "fallback": ["lightricks/ltx-video", "wavespeedai/wan-2.1-i2v-720p"],
+                "cost_per_second": 0.40,
+                "max_duration": 6,
+                "features": ["image_animation", "first_frame_support", "subject_reference", "cost_effective"],
+                "recommended_for": ["photo_animation", "still_to_motion", "social_media", "image_to_video"]
             },
             WorkflowType.TEXT_TO_VIDEO: {
                 "primary": "minimax/video-01",  # Cost-effective text-to-video
                 "fallback": ["lightricks/ltx-video", "kwaivgi/kling-v1.6-standard"],
-                "cost_per_second": 0.30,
+                "cost_per_second": 0.40,
                 "max_duration": 6,  # Minimax limitation
                 "features": ["text_based", "affordable", "quick_generation"],
                 "recommended_for": ["simple_videos", "concept_visualization", "budget_friendly"]
@@ -99,7 +99,7 @@ class ModelSelector:
             },
             "quality": {
                 "image_primary": "black-forest-labs/flux-1.1-pro-ultra",
-                "video_primary": "google/veo-3",
+                "video_primary": "google/veo-3",  # For audio-required videos only, otherwise minimax
                 "cost_multiplier": 1.8,
                 "time_multiplier": 1.5
             }

@@ -68,7 +68,7 @@ async def process_simplified_request(request: SimplifiedRequest):
         )
         
         # Get model parameters
-        model_params = await simplified_flow.get_model_parameters(result)
+        model_params = await simplified_flow.get_model_parameters(result, request.context)
         
         # Estimate costs (simplified)
         estimated_cost = _estimate_cost(result.model_to_use)
@@ -106,13 +106,20 @@ async def get_available_models():
     """
     return {
         "models": {
+            # Image generation models
             "NEW_IMAGE": "black-forest-labs/flux-1.1-pro",
-            "NEW_IMAGE_REF": "black-forest-labs/flux-kontext-max",
+            "NEW_IMAGE_REF": "runway_gen4_image",
             "EDIT_IMAGE": "black-forest-labs/flux-kontext-max",
-            "EDIT_IMAGE_REF": "runway_gen4_image"
+            "EDIT_IMAGE_REF": "runway_gen4_image",
+            # Video generation models
+            "NEW_VIDEO": "minimax/video-01",
+            "NEW_VIDEO_WITH_AUDIO": "google/veo-3",
+            "IMAGE_TO_VIDEO": "minimax/video-01",
+            "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",
+            "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"
         },
         "csv_based": True,
-        "description": "Models are automatically selected based on CSV decision matrix"
+        "description": "Models are automatically selected based on CSV decision matrix including video generation flows"
     }
 
 
@@ -156,7 +163,7 @@ async def get_decision_matrix():
     Return the CSV decision matrix for transparency
     """
     return {
-        "decision_matrix": [
+        "image_flows": [
             {
                 "active_image": False,
                 "uploaded_image": False, 
@@ -178,16 +185,16 @@ async def get_decision_matrix():
                 "uploaded_image": False,
                 "referenced_image": True,
                 "type": "NEW_IMAGE_REF", 
-                "model": "Kontext",
-                "enhancement": "Add: Maintain all other aspects of the original image"
+                "model": "Runway",
+                "enhancement": "Add: Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
             },
             {
                 "active_image": False,
                 "uploaded_image": True,
                 "referenced_image": False,
                 "type": "NEW_IMAGE_REF",
-                "model": "Kontext", 
-                "enhancement": "Add: Maintain all other aspects of the original image"
+                "model": "Runway", 
+                "enhancement": "Add: Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
             },
             {
                 "active_image": True,
@@ -214,12 +221,53 @@ async def get_decision_matrix():
                 "enhancement": "Add: Maintain all other aspects of the [target ref]"
             }
         ],
+        "video_flows": [
+            {
+                "prompt_type": "Create new video",
+                "active_image": False,
+                "uploaded_image": False,
+                "referenced_image": False,
+                "type": "NEW_VIDEO",
+                "model": "Veo 3",
+                "enhancement": "Transform to comprehensive video prompt with scene description, visual style, camera movement, etc."
+            },
+            {
+                "prompt_type": "Create new video",
+                "active_image": True,
+                "uploaded_image": False,
+                "referenced_image": False,
+                "type": "IMAGE_TO_VIDEO",
+                "model": "Runway",
+                "enhancement": "None - use original prompt for image animation"
+            },
+            {
+                "prompt_type": "Create new video",
+                "active_image": True,
+                "uploaded_image": True,
+                "referenced_image": False,
+                "type": "EDIT_IMAGE_REF_TO_VIDEO",
+                "model": "Flux Kontext to Runway",
+                "enhancement": "Use Kontext to update image first, then send to Runway"
+            },
+            {
+                "prompt_type": "Create new video",
+                "active_image": True,
+                "uploaded_image": False,
+                "referenced_image": True,
+                "type": "EDIT_IMAGE_REF_TO_VIDEO",
+                "model": "Flux Kontext to Runway",
+                "enhancement": "Use Kontext to update image first, then send to Runway"
+            }
+        ],
         "notes": [
-            "LLM determines edit intent when active_image=True and no other images",
+            "VIDEO DETECTION: System first checks for video intent keywords before applying image flows",
+            "Video keywords: 'create video', 'make video', 'generate video', 'animate', 'animation', etc.",
+            "LLM determines edit intent when active_image=True and no other images (for image flows)",
             "NEW_IMAGE_REF handles creating new images with reference/uploaded images",
             "All prompt enhancement logic is handled by the LLM",
             "Model selection is deterministic based on CSV rules",
-            "SPECIAL RULE: 2+ reference images (any combination of @refs + uploads) → Runway (overrides CSV model)"
+            "SPECIAL RULE: 2+ reference images (any combination of @refs + uploads) → Runway (overrides CSV model for image flows)",
+            "Two-step process for EDIT_IMAGE_REF_TO_VIDEO: Flux Kontext updates image, then Runway creates video"
         ]
     }
 
@@ -227,9 +275,15 @@ async def get_decision_matrix():
 def _estimate_cost(model_name: str) -> float:
     """Simple cost estimation based on model"""
     cost_map = {
+        # Image models
         "black-forest-labs/flux-1.1-pro": 0.04,
         "black-forest-labs/flux-kontext-max": 0.03,
-        "runway_gen4_image": 0.06
+        "runway_gen4_image": 0.06,
+        # Video models
+                    "google/veo-3": 0.75,  # Per second, so 10 seconds = $7.50
+            "minimax/video-01": 0.40,  # Per second for MiniMax video
+        "runway_gen3_video": 0.20,  # Per second, so 5 seconds = $1.00
+        "flux-kontext-to-runway": 0.23  # Combined cost of both steps
     }
     return cost_map.get(model_name, 0.05)
 
@@ -237,9 +291,15 @@ def _estimate_cost(model_name: str) -> float:
 def _estimate_time(model_name: str) -> int:
     """Simple time estimation in seconds"""
     time_map = {
+        # Image models
         "black-forest-labs/flux-1.1-pro": 25,
         "black-forest-labs/flux-kontext-max": 30, 
-        "runway_gen4_image": 45
+        "runway_gen4_image": 45,
+        # Video models  
+                    "google/veo-3": 120,  # 2 minutes for Veo 3 video generation
+            "minimax/video-01": 90,  # 1.5 minutes for MiniMax video generation
+        "runway_gen3_video": 90,  # 1.5 minutes for Runway video
+        "flux-kontext-to-runway": 150  # 2.5 minutes for two-step process
     }
     return time_map.get(model_name, 30)
 
@@ -247,22 +307,26 @@ def _estimate_time(model_name: str) -> int:
 def _explain_csv_decision(active: bool, uploaded: bool, referenced: bool) -> str:
     """Explain the CSV decision logic"""
     
+    base_explanation = ""
+    
     if not active and not uploaded and not referenced:
-        return "No images → NEW_IMAGE → Flux 1.1 Pro"
+        base_explanation = "No images → NEW_IMAGE → Flux 1.1 Pro (or NEW_VIDEO → Veo 3 if video intent)"
     elif not active and not uploaded and referenced:
-        return "No active, No uploaded, Referenced → NEW_IMAGE_REF → Kontext (unless 2+ refs → Runway)"
+        base_explanation = "No active, No uploaded, Referenced → NEW_IMAGE_REF → Runway (or EDIT_IMAGE_REF_TO_VIDEO if video intent)"
     elif not active and uploaded and not referenced:
-        return "No active, Uploaded, No referenced → NEW_IMAGE_REF → Kontext (unless 2+ uploads → Runway)"
+        base_explanation = "No active, Uploaded, No referenced → NEW_IMAGE_REF → Runway (or EDIT_IMAGE_REF_TO_VIDEO if video intent)"
     elif active and not uploaded and not referenced:
-        return "Active image only → LLM determines edit intent → EDIT_IMAGE (Kontext) or NEW_IMAGE (Flux)"
+        base_explanation = "Active image only → LLM determines edit intent → EDIT_IMAGE (Kontext) or NEW_IMAGE (Flux), or IMAGE_TO_VIDEO (Runway) if video intent"
     elif active and uploaded and not referenced:
-        return "Active + Uploaded → EDIT_IMAGE_REF → Runway"
+        base_explanation = "Active + Uploaded → EDIT_IMAGE_REF → Runway (or EDIT_IMAGE_REF_TO_VIDEO if video intent)"
     elif active and not uploaded and referenced:
-        return "Active + Referenced → EDIT_IMAGE_REF → Runway" 
+        base_explanation = "Active + Referenced → EDIT_IMAGE_REF → Runway (or EDIT_IMAGE_REF_TO_VIDEO if video intent)" 
     elif active and uploaded and referenced:
-        return "Active + Uploaded + Referenced → EDIT_IMAGE_REF → Runway"
+        base_explanation = "Active + Uploaded + Referenced → EDIT_IMAGE_REF → Runway (or EDIT_IMAGE_REF_TO_VIDEO if video intent)"
     else:
-        return "Unusual combination - fallback logic applied"
+        base_explanation = "Unusual combination - fallback logic applied"
+    
+    return base_explanation + "\n\nNOTE: System first checks for video intent keywords before applying image flows."
 
 
 # Example usage in main app

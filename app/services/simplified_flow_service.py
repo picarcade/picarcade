@@ -37,6 +37,12 @@ class PromptType(Enum):
     NEW_IMAGE_REF = "NEW_IMAGE_REF"
     EDIT_IMAGE = "EDIT_IMAGE" 
     EDIT_IMAGE_REF = "EDIT_IMAGE_REF"
+    # New video generation flows from CSV
+    NEW_VIDEO = "NEW_VIDEO"
+    NEW_VIDEO_WITH_AUDIO = "NEW_VIDEO_WITH_AUDIO"  # New: Text-to-video with audio (Veo 3) - no working image
+    IMAGE_TO_VIDEO = "IMAGE_TO_VIDEO"
+    IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # New: Image to video with audio (MiniMax)
+    EDIT_IMAGE_REF_TO_VIDEO = "EDIT_IMAGE_REF_TO_VIDEO"
 
 
 class SimplifiedFlowResult:
@@ -346,16 +352,33 @@ You are given these EXACT boolean flags - USE THESE VALUES ONLY:
 
 DO NOT try to detect images from the prompt - these flags tell you exactly what images are available!
 
-CLASSIFICATION RULES (from CSV) - FOLLOW THESE EXACTLY:
+VIDEO DETECTION - FIRST PRIORITY:
+Check if the user wants VIDEO generation (not image). Video keywords include:
+- "create video", "make video", "generate video", "video of", "animate", "animation"
+- "make it move", "bring to life", "turn into video", "video version"
+- "moving", "motion", "animated", "video clip", "movie", "film"
+
+IF VIDEO INTENT DETECTED:
+CRITICAL: Veo 3 is ONLY used for pure text-to-video with audio when NO working image exists!
+
+First check for AUDIO INTENT (singing, song, music, audio, sound, voice, speak, talk, lyrics, melody, vocal, etc.):
+1. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: NEW_VIDEO_WITH_AUDIO, Model: Veo 3 (text-to-video with audio)
+2. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: NEW_VIDEO, Model: MiniMax (text-to-video)
+3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: MiniMax (image-to-video with audio)
+4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: MiniMax (image-to-video)
+5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
+6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
+
+IMAGE CLASSIFICATION RULES (if NO video intent):
 1. If Active Image=NO, Uploaded Image=NO, Referenced Image=NO → Type: NEW_IMAGE, Model: Flux 1.1 Pro
 2. If Active Image=YES, Uploaded Image=NO, Referenced Image=NO → Type: NEW_IMAGE, Model: Flux 1.1 Pro (no edit intent) or EDIT_IMAGE, Model: Kontext (edit intent)
-3. If Active Image=NO, Uploaded Image=NO, Referenced Image=YES → Type: NEW_IMAGE_REF, Model: Kontext
-4. If Active Image=NO, Uploaded Image=YES, Referenced Image=NO → Type: NEW_IMAGE_REF, Model: Kontext
+3. If Active Image=NO, Uploaded Image=NO, Referenced Image=YES → Type: NEW_IMAGE_REF, Model: Runway
+4. If Active Image=NO, Uploaded Image=YES, Referenced Image=NO → Type: NEW_IMAGE_REF, Model: Runway
 5. If Active Image=YES, Uploaded Image=YES, Referenced Image=NO → Type: EDIT_IMAGE_REF, Model: Runway
 6. If Active Image=YES, Uploaded Image=NO, Referenced Image=YES → Type: EDIT_IMAGE_REF, Model: Runway  
 7. If Active Image=YES, Uploaded Image=YES, Referenced Image=YES → Type: EDIT_IMAGE_REF, Model: Runway
 
-CRITICAL: When both Active Image=TRUE AND (Uploaded Image=TRUE OR Referenced Image=TRUE), it is ALWAYS EDIT_IMAGE_REF, regardless of edit keywords!
+CRITICAL: When both Active Image=TRUE AND (Uploaded Image=TRUE OR Referenced Image=TRUE), it is ALWAYS EDIT_IMAGE_REF (or EDIT_IMAGE_REF_TO_VIDEO if video intent), regardless of edit keywords!
 
 SPECIFIC EXAMPLE:
 - If active_image=True, uploaded_image=True, referenced_image=False → ALWAYS classify as EDIT_IMAGE_REF
@@ -366,8 +389,27 @@ EDIT INTENT KEYWORDS:
 - "put on", "wear", "dress up", "style", "hair", "background", "color", "enhance", "improve"
 
 PROMPT ENHANCEMENT RULES (from CSV):
+
+VIDEO ENHANCEMENT RULES:
+1. NEW_VIDEO: Transform user prompt to cover these elements:
+   - Scene description: Overall description of the scene - what's happening, who's involved, atmosphere
+   - Visual style: Overall look and feel - cinematic, realistic, animated, stylized, surreal
+   - Camera movement: How camera should move - slow pan, static shot, tracking shot, aerial zoom (avoid slang terms)
+   - Main subject: Primary person/character/object that should be the focus
+   - Background setting: Specific location or environment - city street at night, forest during sunrise, futuristic lab
+   - Lighting/mood: Type of lighting and emotional tone - soft natural light with warm tone, harsh dramatic lighting
+   - Audio cue (optional): Specific sound or music - song when character dances, ambient sounds like rain/footsteps
+   - Color palette: Dominant colors or tones - bold and bright, pastel, muted earth tones, monochrome
+   - Dialog/Background Noise (optional): What characters should say and when, environmental sounds
+   - Subtitles and Language: Whether to include subtitles, language preferences affect cultural context
+
+2. IMAGE_TO_VIDEO: No specific enhancement - use original prompt for image animation (Runway - no audio)
+3. IMAGE_TO_VIDEO_WITH_AUDIO: No specific enhancement - use original prompt for image animation with audio (Veo 3 - audio enabled)
+4. EDIT_IMAGE_REF_TO_VIDEO: Use Kontext to update the image first, then send to Runway for video generation
+
+IMAGE ENHANCEMENT RULES:
 1. NEW_IMAGE: No enhancement needed - use original prompt
-2. NEW_IMAGE_REF: Understand intent and make minor edits to improve clarity. Add: "Maintain all other aspects of the original image."
+2. NEW_IMAGE_REF: Understand intent and make minor edits to improve clarity. Add: "Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
 3. EDIT_IMAGE: Understand intent and make minor edits to improve clarity. Add: "Maintain all other aspects of the original image."
 4. EDIT_IMAGE_REF: 
    - DO NOT just append to the original prompt - COMPLETELY REWRITE IT
@@ -392,13 +434,14 @@ Based on the CSV decision matrix - APPLY THESE RULES IN ORDER:
 
 For prompt enhancement:
 - NEW_IMAGE: Return original prompt unchanged
-- NEW_IMAGE_REF, EDIT_IMAGE: Make minor clarity improvements and add "Maintain all other aspects of the original image."
+- NEW_IMAGE_REF: Make minor clarity improvements and add "Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+- EDIT_IMAGE: Make minor clarity improvements and add "Maintain all other aspects of the original image."
 - EDIT_IMAGE_REF: COMPLETELY REWRITE the prompt following the structured format - do not just enhance the original!
 
 **CRITICAL FOR EDIT_IMAGE_REF: You must identify the TARGET and SOURCE from context and rewrite the prompt completely. Never just append or enhance - always restructure to the SIMPLE format: "Add [CHANGE] from @[SOURCE] to @[TARGET]"**
 
 Return your analysis as JSON:
-{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
+{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
 
 USER PROMPT TO ANALYZE: "{user_prompt}"
 
@@ -432,7 +475,7 @@ IMPORTANT FOR EDIT_IMAGE_REF:
 
 Respond with ONLY valid JSON and no additional text:
 {{
-    "type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF",
+    "type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO",
     "enhanced_prompt": "enhanced version of user prompt following CSV rules",
     "reasoning": "brief explanation of classification and enhancement decisions"
 }}
@@ -487,15 +530,25 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             enhanced_prompt = result.get("enhanced_prompt", user_prompt)
             reasoning = result.get("reasoning", "LLM classification completed")
             
-            # Safety check: Enforce CSV rules even if LLM gets it wrong
-            correct_type = self._enforce_csv_rules(active_image, uploaded_image, referenced_image)
-            if llm_type != correct_type:
-                print(f"[WARNING] SIMPLIFIED: LLM classified as {llm_type} but CSV rules require {correct_type}. Correcting.")
+            # Trust the LLM classification - only use CSV rules as fallback for edge cases
+            print(f"[DEBUG] SIMPLIFIED: LLM classified as {llm_type} with reasoning: {reasoning}")
+            
+            # Only override LLM if it makes an obviously invalid classification
+            # (For now, trust the LLM - we can add specific validation rules later if needed)
+            valid_types = ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF", 
+                          "NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]
+            
+            if llm_type not in valid_types:
+                print(f"[WARNING] SIMPLIFIED: LLM returned invalid type '{llm_type}', falling back to CSV rules")
+                correct_type = self._enforce_csv_rules(active_image, uploaded_image, referenced_image, user_prompt)
                 llm_type = correct_type
-                reasoning += f" (Corrected from {result.get('type')} to {correct_type})"
+                reasoning += f" (Corrected from invalid '{result.get('type')}' to {correct_type} via CSV fallback)"
+            else:
+                print(f"[DEBUG] SIMPLIFIED: Trusting LLM classification: {llm_type}")
+                # CSV rules are NOT enforced - LLM decision is trusted
                 
-                # If we corrected to EDIT_IMAGE_REF, ensure proper prompt format
-                if correct_type == "EDIT_IMAGE_REF":
+                # If we did a CSV fallback to EDIT_IMAGE_REF, ensure proper prompt format
+                if llm_type == "EDIT_IMAGE_REF" and "CSV fallback" in reasoning:
                     if "hair" in user_prompt.lower():
                         if referenced_image and not uploaded_image:
                             # Use the named reference from the prompt
@@ -537,13 +590,50 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         Fallback classification when LLM fails
         """
         
-        # Simple rule-based classification following updated CSV
+        # First check for video intent
+        video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
+                         "make it move", "bring to life", "turn into video", "video version", 
+                         "moving", "motion", "animated", "video clip", "movie", "film"]
+        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        
+        if has_video_intent:
+            # Video flow fallback logic
+            if not active_image and not uploaded_image and not referenced_image:
+                # Check for audio intent in fallback
+                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                
+                if has_audio_intent:
+                    # Veo 3 for text-to-video with audio
+                    enhanced_prompt = self._enhance_veo3_prompt_fallback(user_prompt)
+                    return ("NEW_VIDEO_WITH_AUDIO", enhanced_prompt, "Fallback: Text-to-video with audio (Veo 3)")
+                else:
+                    # MiniMax for text-to-video without audio
+                    return ("NEW_VIDEO", user_prompt, "Fallback: Text-to-video (MiniMax)")
+            elif active_image and not uploaded_image and not referenced_image:
+                # Check for audio intent in fallback too
+                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                
+                if has_audio_intent:
+                    return ("IMAGE_TO_VIDEO_WITH_AUDIO", user_prompt, "Fallback: Image to video with audio (Veo 3)")
+                else:
+                    return ("IMAGE_TO_VIDEO", user_prompt, "Fallback: Image to video conversion (Runway)")
+            else:
+                # Any combination with references = EDIT_IMAGE_REF_TO_VIDEO
+                return ("EDIT_IMAGE_REF_TO_VIDEO", user_prompt, "Fallback: Video generation with image references")
+        
+        # Image flow fallback logic (existing)
         if not active_image and not uploaded_image and not referenced_image:
             return ("NEW_IMAGE", user_prompt, "Fallback: No images detected")
         
         # New scenarios: NEW_IMAGE_REF for creating new images with references/uploads but no active image
         if not active_image and (uploaded_image or referenced_image):
-            enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+            enhanced_prompt = user_prompt + ". Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
             return ("NEW_IMAGE_REF", enhanced_prompt, "Fallback: New image with references/uploads")
             
         # Check for edit keywords when active image is present
@@ -572,11 +662,65 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         
         return ("NEW_IMAGE", user_prompt, "Fallback: Default to new image")
     
-    def _enforce_csv_rules(self, active_image: bool, uploaded_image: bool, referenced_image: bool) -> str:
+    def _enhance_veo3_prompt_fallback(self, user_prompt: str) -> str:
+        """
+        Basic Veo 3 prompt enhancement for fallback scenarios
+        """
+        # Simple enhancement that adds some video-specific structure
+        enhanced = f"Scene: {user_prompt}. "
+        enhanced += "Visual style: cinematic and realistic. "
+        enhanced += "Camera movement: smooth and steady. "
+        enhanced += "Lighting: natural and well-balanced. "
+        enhanced += "Duration: 5-10 seconds."
+        return enhanced
+    
+    def _enforce_csv_rules(self, active_image: bool, uploaded_image: bool, referenced_image: bool, user_prompt: str = "") -> str:
         """
         Enforce CSV rules to determine the correct classification
+        IMPORTANT: Check for video intent FIRST before applying image rules
         """
-        # CSV rules in order:
+        
+        # FIRST: Check for video intent in the prompt
+        video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
+                         "make it move", "bring to life", "turn into video", "video version", 
+                         "moving", "motion", "animated", "video clip", "movie", "film", "make a video"]
+        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        
+        # Debug video intent detection
+        print(f"[DEBUG] CSV Rules: user_prompt='{user_prompt}'")
+        print(f"[DEBUG] CSV Rules: user_prompt.lower()='{user_prompt.lower()}'")
+        print(f"[DEBUG] CSV Rules: video_keywords={video_keywords}")
+        print(f"[DEBUG] CSV Rules: has_video_intent={has_video_intent}")
+        if has_video_intent:
+            matching_keywords = [kw for kw in video_keywords if kw in user_prompt.lower()]
+            print(f"[DEBUG] CSV Rules: matching video keywords={matching_keywords}")
+        print(f"[DEBUG] CSV Rules: flags - active_image={active_image}, uploaded_image={uploaded_image}, referenced_image={referenced_image}")
+        
+        if has_video_intent:
+            # Check for audio intent in video requests
+            audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                             "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                             "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+            has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+            
+            # VIDEO CSV RULES:
+            if not active_image and not uploaded_image and not referenced_image:
+                # No working image - check for audio intent
+                if has_audio_intent:
+                    return "NEW_VIDEO_WITH_AUDIO"  # Veo 3 (text-to-video with audio)
+                else:
+                    return "NEW_VIDEO"  # MiniMax (text-to-video)
+            elif active_image and not uploaded_image and not referenced_image:
+                # Has working image - MiniMax for all scenarios
+                if has_audio_intent:
+                    return "IMAGE_TO_VIDEO_WITH_AUDIO"  # MiniMax (image-to-video with audio)
+                else:
+                    return "IMAGE_TO_VIDEO"  # MiniMax (image-to-video)
+            else:
+                # Any combination with references = EDIT_IMAGE_REF_TO_VIDEO
+                return "EDIT_IMAGE_REF_TO_VIDEO"  # MiniMax (reference-based video)
+        
+        # IMAGE CSV RULES (only if no video intent):
         if not active_image and not uploaded_image and not referenced_image:
             return "NEW_IMAGE"
         if active_image and not uploaded_image and not referenced_image:
@@ -600,20 +744,27 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         Special rule: 2+ reference images → Runway (regardless of original CSV mapping)
         """
         model_mapping = {
+            # Image generation flows
             "NEW_IMAGE": "black-forest-labs/flux-1.1-pro",
-            "NEW_IMAGE_REF": "black-forest-labs/flux-kontext-max",  # New: Kontext for new images with references
+            "NEW_IMAGE_REF": "runway_gen4_image",  # Updated: Runway for new images with references
             "EDIT_IMAGE": "black-forest-labs/flux-kontext-max", 
-            "EDIT_IMAGE_REF": "runway_gen4_image"
+            "EDIT_IMAGE_REF": "runway_gen4_image",
+            # Video generation flows
+            "NEW_VIDEO": "minimax/video-01",  # MiniMax for all video generation (supports text-to-video and image-to-video)
+            "NEW_VIDEO_WITH_AUDIO": "google/veo-3",  # Veo 3 ONLY for text-to-video with audio (no working image)
+            "IMAGE_TO_VIDEO": "minimax/video-01",  # MiniMax for image-to-video (supports first_frame_image)
+            "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",  # MiniMax for image-to-video with audio
+            "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"  # MiniMax for reference-based video generation
         }
         
-        # Special rule: 2+ reference images always go to Runway
-        if total_references >= 2:
+        # Special rule: 2+ reference images always go to Runway (for image flows only)
+        if total_references >= 2 and prompt_type not in ["NEW_VIDEO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
             print(f"[DEBUG] SIMPLIFIED: {total_references} reference images detected - routing to Runway instead of {model_mapping.get(prompt_type)}")
             return "runway_gen4_image"
         
         return model_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
     
-    async def get_model_parameters(self, result: SimplifiedFlowResult) -> Dict[str, Any]:
+    async def get_model_parameters(self, result: SimplifiedFlowResult, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Get model-specific parameters based on flow result (with caching)"""
         
         # Generate cache key for model parameters
@@ -622,8 +773,11 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         # Ensure service is initialized
         await self._ensure_initialized()
         
-        # Try to get from cache first
-        if self.cache:
+        # Skip cache for Runway models to ensure proper reference image handling
+        use_cache = result.model_to_use != "runway_gen4_image"
+        
+        # Try to get from cache first (except for Runway models)
+        if self.cache and use_cache:
             try:
                 cached_params = await self.cache.get(cache_key)
                 if cached_params:
@@ -658,10 +812,80 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "safety_tolerance": 2
             })
         elif result.model_to_use == "runway_gen4_image":
+            print(f"[DEBUG] SIMPLIFIED: Setting up Runway parameters for {result.prompt_type.value}")
+            print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
+            
             base_params.update({
-                "mode": "gen4-image",
-                "aspect_ratio": "16:9"
+                "promptText": result.enhanced_prompt,
+                "ratio": "1920:1080",
+                "model": "gen4_image"
             })
+            # Remove the generic prompt since Runway uses promptText
+            if "prompt" in base_params:
+                del base_params["prompt"]
+            
+            print(f"[DEBUG] SIMPLIFIED: Base Runway params: {base_params}")
+            
+            # Add reference images if they exist in context
+            if context and result.prompt_type.value in ["NEW_IMAGE_REF", "EDIT_IMAGE_REF"]:
+                # Set type to route to correct generator path
+                base_params["type"] = "text_to_image_with_references"
+                print(f"[DEBUG] SIMPLIFIED: Set type=text_to_image_with_references for reference flow")
+                
+                reference_images = []
+                
+                print(f"[DEBUG] SIMPLIFIED: Checking for reference images in context...")
+                
+                # Get reference images from context
+                if "reference_images" in context:
+                    print(f"[DEBUG] SIMPLIFIED: Found {len(context['reference_images'])} reference images in context")
+                    for ref_image in context["reference_images"]:
+                        if isinstance(ref_image, dict) and "url" in ref_image and "tag" in ref_image:
+                            reference_images.append({
+                                "uri": ref_image["url"],
+                                "tag": ref_image["tag"]
+                            })
+                            print(f"[DEBUG] SIMPLIFIED: Added reference: @{ref_image['tag']} -> {ref_image['url']}")
+                
+                # Add uploaded images as references
+                if "uploaded_images" in context and context["uploaded_images"]:
+                    print(f"[DEBUG] SIMPLIFIED: Found {len(context['uploaded_images'])} uploaded images in context")
+                    for i, uploaded_url in enumerate(context["uploaded_images"]):
+                        reference_images.append({
+                            "uri": uploaded_url,
+                            "tag": f"reference_{i+1}"
+                        })
+                        print(f"[DEBUG] SIMPLIFIED: Added uploaded reference: reference_{i+1} -> {uploaded_url}")
+                
+                if reference_images:
+                    base_params["referenceImages"] = reference_images
+                    print(f"[DEBUG] SIMPLIFIED: Final Runway params with {len(reference_images)} reference images: {base_params}")
+                else:
+                    print(f"[DEBUG] SIMPLIFIED: No reference images found - Runway will generate without references")
+            else:
+                print(f"[DEBUG] SIMPLIFIED: Not a reference flow or no context - skipping reference image setup")
+        # Video model parameters
+        elif result.model_to_use == "google/veo-3":
+            # Veo 3 only supports text-to-video with audio (no working image)
+            base_params.update({
+                "duration": 10,  # 10 seconds max for Veo 3
+                "quality": "high",
+                "prompt_optimizer": True
+            })
+        elif result.model_to_use == "minimax/video-01":
+            # MiniMax supports all video scenarios (text-to-video and image-to-video)
+            base_params.update({
+                "prompt_optimizer": True
+            })
+            
+            # Add first_frame_image for image-to-video scenarios
+            if result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+                # These will be populated with actual image URLs by the API layer
+                base_params["requires_first_frame_image"] = True
+                
+            # Add subject_reference for reference-based scenarios  
+            if result.prompt_type.value == "EDIT_IMAGE_REF_TO_VIDEO":
+                base_params["requires_subject_reference"] = True
         else:
             # Default parameters for unknown models
             base_params.update({
@@ -669,10 +893,10 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "num_inference_steps": 20
             })
         
-        # Cache the base parameters (without prompt) for 1 hour
-        if self.cache:
+        # Cache the base parameters (without prompt) for 1 hour (except Runway models)
+        if self.cache and use_cache:
             try:
-                cache_params = {k: v for k, v in base_params.items() if k != "prompt"}
+                cache_params = {k: v for k, v in base_params.items() if k not in ["prompt", "promptText", "referenceImages"]}
                 await self.cache.set(cache_key, cache_params, ttl=3600)
                 logger.info(f"Cached model parameters for: {result.model_to_use}")
             except Exception as e:
@@ -693,27 +917,66 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
     ) -> SimplifiedFlowResult:
         """Create fallback result when AI classification fails"""
         
-        # Simple rule-based classification following CSV
-        if not active_image and not uploaded_image and not referenced_image:
-            prompt_type = "NEW_IMAGE"
-            enhanced_prompt = user_prompt
-        elif not active_image and (uploaded_image or referenced_image):
-            prompt_type = "NEW_IMAGE_REF"
-            enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
-        elif active_image and not uploaded_image and not referenced_image:
-            # Check for edit intent
-            edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
-            has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
-            if has_edit_intent:
-                prompt_type = "EDIT_IMAGE"
-                enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+        # First check for video intent
+        video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
+                         "make it move", "bring to life", "turn into video", "video version", 
+                         "moving", "motion", "animated", "video clip", "movie", "film"]
+        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        
+        if has_video_intent:
+            # Video flow fallback logic
+            if not active_image and not uploaded_image and not referenced_image:
+                # Check for audio intent
+                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                
+                if has_audio_intent:
+                    prompt_type = "NEW_VIDEO_WITH_AUDIO"
+                    enhanced_prompt = self._enhance_veo3_prompt_fallback(user_prompt)
+                else:
+                    prompt_type = "NEW_VIDEO"
+                    enhanced_prompt = user_prompt
+            elif active_image and not uploaded_image and not referenced_image:
+                # Check for audio intent in fallback result creation
+                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                
+                if has_audio_intent:
+                    prompt_type = "IMAGE_TO_VIDEO_WITH_AUDIO"
+                    enhanced_prompt = user_prompt
+                else:
+                    prompt_type = "IMAGE_TO_VIDEO"
+                    enhanced_prompt = user_prompt
             else:
-                prompt_type = "NEW_IMAGE"
+                # Any combination with references = EDIT_IMAGE_REF_TO_VIDEO
+                prompt_type = "EDIT_IMAGE_REF_TO_VIDEO"
                 enhanced_prompt = user_prompt
         else:
-            # active_image + (uploaded_image or referenced_image)
-            prompt_type = "EDIT_IMAGE_REF"
-            enhanced_prompt = user_prompt
+            # Image flow fallback logic (existing)
+            if not active_image and not uploaded_image and not referenced_image:
+                prompt_type = "NEW_IMAGE"
+                enhanced_prompt = user_prompt
+            elif not active_image and (uploaded_image or referenced_image):
+                prompt_type = "NEW_IMAGE_REF"
+                enhanced_prompt = user_prompt + ". Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+            elif active_image and not uploaded_image and not referenced_image:
+                # Check for edit intent
+                edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
+                has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
+                if has_edit_intent:
+                    prompt_type = "EDIT_IMAGE"
+                    enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+                else:
+                    prompt_type = "NEW_IMAGE"
+                    enhanced_prompt = user_prompt
+            else:
+                # active_image + (uploaded_image or referenced_image)
+                prompt_type = "EDIT_IMAGE_REF"
+                enhanced_prompt = user_prompt
         
         # Get model for type
         model_to_use = self._get_model_for_type(prompt_type, total_references)

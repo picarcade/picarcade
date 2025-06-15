@@ -79,7 +79,7 @@ class ReplicateGenerator(BaseGenerator):
                 result = await self._generate_flux_kontext_max(prompt, parameters)
             elif "flux" in model_name:
                 result = await self._generate_flux(prompt, parameters)
-            elif "google/veo" in model_name or "runway" in model_name:
+            elif "google/veo" in model_name or "runway" in model_name or "minimax/video" in model_name:
                 result = await self._generate_video(prompt, parameters)
             else:
                 result = await self._generate_other(prompt, parameters)
@@ -526,7 +526,7 @@ class ReplicateGenerator(BaseGenerator):
         return await asyncio.to_thread(sync_call)
     
     async def _generate_video(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate video using video models on Replicate (e.g., google/veo-3)"""
+        """Generate video using video models on Replicate (google/veo-3, minimax/video-01)"""
         def sync_call():
             model_name = parameters.get("model", "google/veo-3")
             
@@ -537,14 +537,35 @@ class ReplicateGenerator(BaseGenerator):
             
             # Add model-specific parameters based on actual API schema
             if "google/veo" in model_name:
-                # Google Veo-3 on Replicate only supports prompt and seed
-                # Based on the actual API schema: {"prompt": string, "seed": integer (optional)}
+                # Google Veo-3 on Replicate: {"prompt": string, "seed": integer (optional)}
+                # Only supports text-to-video with audio
                 seed = parameters.get("seed")
                 if seed is not None:
                     inputs["seed"] = seed
                     
+            elif "minimax/video-01" in model_name:
+                # MiniMax video-01: supports prompt, first_frame_image, subject_reference, prompt_optimizer
+                inputs["prompt_optimizer"] = parameters.get("prompt_optimizer", True)
+                
+                # Add first frame image if provided (for image-to-video)
+                if parameters.get("requires_first_frame_image"):
+                    # Get the working image or uploaded image for first frame
+                    first_frame = parameters.get("image") or parameters.get("uploaded_image")
+                    if first_frame:
+                        inputs["first_frame_image"] = first_frame
+                        print(f"[DEBUG] Added first_frame_image: {first_frame}")
+                
+                # Add subject reference if provided (for reference-based generation)
+                if parameters.get("requires_subject_reference"):
+                    # Get reference images from context
+                    reference_images = parameters.get("reference_images", [])
+                    if reference_images and len(reference_images) > 0:
+                        # Use first reference as subject reference
+                        inputs["subject_reference"] = reference_images[0].get("url") or reference_images[0].get("uri")
+                        print(f"[DEBUG] Added subject_reference: {inputs['subject_reference']}")
+                    
             elif "runway" in model_name:
-                # Runway specific parameters (if using Replicate endpoint)
+                # Legacy Runway parameters (if still needed)
                 inputs.update({
                     "duration": parameters.get("duration", 5),
                     "ratio": parameters.get("ratio", "1280:720"),

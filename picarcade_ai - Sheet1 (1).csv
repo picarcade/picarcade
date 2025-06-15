@@ -1,11 +1,22 @@
-,,,,,,,
-,,,,,,,
-,Prompt Type,Active Image,Uploaded Image,Referenced Image,Type Determined,Model to Use,Prompt Enhancement Strategy
-,Create new image,NO,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
-,Create new image,YES,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
-,Create new image,NO,NO,YES,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
-,Create new image,NO,YES,NO,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
-,Edit Request,YES,NO,NO,EDIT_IMAGE,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
-,Edit Request,YES,YES,NO,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
-,Edit Request,YES,NO,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
-,Edit Request,YES,YES,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+Prompt Type,Active Image,Uploaded Image,Referenced Image,Type Determined,Model to Use,Prompt Enhancement Strategy
+Create new image,NO,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
+Create new image,YES,NO,NO,NEW_IMAGE,Flux 1.1 Pro,None
+Create new image,NO,NO,YES,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+Create new image,NO,YES,NO,NEW_IMAGE_REF,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+Edit Request,YES,NO,NO,EDIT_IMAGE,Kontext,Understand Intent. Minor edits to prompt to improve it. Add: Maintain all other aspects of the original image.
+Edit Request,YES,YES,NO,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+Edit Request,YES,NO,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+Edit Request,YES,YES,YES,EDIT_IMAGE_REF,Runway,Understand Intent. Order references correctly and minor edit so it makes sense. Add: Maintain all other aspects of the [target ref]
+Create new video,NO,NO,NO,NEW_VIDEO,Veo 3,"Transform user prompt to cover the following: - **Scene description**: Overall description of the scene you want to create — what’s happening, who’s involved, and the general atmosphere.
+- **Visual style**: Defines the overall look and feel of the video — for example, cinematic, realistic, animated, stylized, or surreal.
+- **Camera movement**: Describes how the camera should move during the scene — for instance, slow pan, static shot, tracking shot, or aerial zoom. Avoid using slang terms (eg ‘robo-arm’ or ‘lens crack’). Be clear and descriptive.
+- **Main subject**: The primary person, character, or object that should be the focus of the video. Clearly describe who is doing what in the scene.
+- **Background setting**: The specific location or environment where the scene takes place — such as a city street at night, a forest during sunrise, or a futuristic lab., traditional village, etc.
+- **Lighting/mood**: Describes the type of lighting and the emotional tone you want — for example, soft natural light with a warm tone, or harsh lighting for a dramatic or tense mood.
+- **Audio cue (optional)**: Any specific sound or music that should be heard during the scene — such as a song starting when the character dances, or ambient sounds like rain, footsteps, or birdsong.
+- **Color palette**: The dominant colors or tones used in the video — such as bold and bright, pastel, muted earth tones, or monochrome. This influences the emotional and visual impact.
+- **Dialog / Background Noise (optional)**: If characters are speaking, specify exactly what they should say and when. You can also include environmental sounds like crowds, wind, or traffic.
+- **Subtitles and Language** : Clearly state whether you want subtitles included or not (e.g., “Do not include subtitles” or “Include subtitles in English”). Note that mentioning a language can influence cultural context (clothing, signs, architecture) even if no spoken language is rendered. To imply language or culture, you can write things like: dialogue in Spanish, with English subtitles, on-screen text in Japanese, Arabic calligraphy visible on walls, Korean street signs in the background, etc."
+Create new video,YES,NO,NO,IMAGE_TO_VIDEO,Runway,
+Create new video,YES,YES,NO,EDIT_IMAGE_REF_TO_VIDEO,Flux Kontext to Runway,Note: Use Kontext to update the image then send that to runway. Make appropriate prompt enhancements.
+Create new video,YES,NO,YES,EDIT_IMAGE_REF_TO_VIDEO,Flux Kontext to Runway,Note: Use Kontext to update the image then send that to runway. Make appropriate prompt enhancements.

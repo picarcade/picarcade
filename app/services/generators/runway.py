@@ -146,10 +146,12 @@ class RunwayGenerator(BaseGenerator):
                 metadata=result.get("metadata", {})
             )
             
-            if parameters.get("reference_images"):
+            # Check for reference images in both camelCase and snake_case for response metadata
+            ref_images = parameters.get("referenceImages", parameters.get("reference_images", []))
+            if ref_images:
                 response.references_used = [
                     ReferenceImage(uri=ref["uri"], tag=ref["tag"])
-                    for ref in parameters["reference_images"]
+                    for ref in ref_images
                 ]
             
             return response
@@ -179,13 +181,22 @@ class RunwayGenerator(BaseGenerator):
         if not self.client:
             raise Exception("Runway API key not configured")
         
-        # Log the complete, definitive API request being sent to Runway
+        # Use promptText from parameters if available (correct camelCase from simplified flow)
+        prompt_text = parameters.get("promptText", prompt)
+        ratio = parameters.get("ratio", "1280:720")
+        
+        # Log the complete, definitive SDK call (Python SDK uses snake_case, converts to camelCase internally)
         complete_api_request = {
-            "sdk_method": "client.text_to_image.create",
-            "parameters": {
+            "sdk_method": "client.text_to_image.create", 
+            "python_sdk_parameters": {
                 "model": "gen4_image",
-                "prompt_text": prompt,
-                "ratio": parameters.get("ratio", "1280:720")
+                "prompt_text": prompt_text,  # ✅ Python SDK snake_case
+                "ratio": ratio
+            },
+            "converted_to_http_api": {
+                "model": "gen4_image", 
+                "promptText": prompt_text,  # ✅ HTTP API camelCase
+                "ratio": ratio
             }
         }
         logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
@@ -194,8 +205,8 @@ class RunwayGenerator(BaseGenerator):
         try:
             task = self.client.text_to_image.create(
                 model="gen4_image",
-                prompt_text=prompt,
-                ratio=parameters.get("ratio", "1280:720")
+                prompt_text=prompt_text,  # ✅ Python SDK uses snake_case
+                ratio=ratio
             )
             
             task_id = task.id
@@ -244,14 +255,19 @@ class RunwayGenerator(BaseGenerator):
         if not self.client:
             raise Exception("Runway API key not configured")
         
+        # Use camelCase parameters from simplified flow service
+        prompt_text = parameters.get("promptText", prompt)
+        ratio = parameters.get("ratio", "1280:720")
+        duration = parameters.get("duration", 5)
+        
         # Log the complete, definitive API request being sent to Runway
         complete_api_request = {
             "sdk_method": "client.text_to_video.create",
             "parameters": {
                 "model": "gen4_turbo",
-                "prompt_text": prompt,
-                "ratio": parameters.get("ratio", "1280:720"),
-                "duration": parameters.get("duration", 5)
+                "promptText": prompt_text,  # ✅ Use camelCase
+                "ratio": ratio,
+                "duration": duration
             }
         }
         logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
@@ -260,9 +276,9 @@ class RunwayGenerator(BaseGenerator):
         try:
             task = self.client.text_to_video.create(
                 model="gen4_turbo",
-                prompt_text=prompt,
-                ratio=parameters.get("ratio", "1280:720"),
-                duration=parameters.get("duration", 5)
+                prompt_text=prompt_text,  # ✅ Python SDK uses snake_case
+                ratio=ratio,
+                duration=duration
             )
             
             task_id = task.id
@@ -315,7 +331,8 @@ class RunwayGenerator(BaseGenerator):
         if not self.client:
             raise Exception("Runway API key not configured")
         
-        reference_images = parameters.get("reference_images", [])
+        # Check for reference images in both camelCase (from simplified flow) and snake_case (legacy)
+        reference_images = parameters.get("referenceImages", parameters.get("reference_images", []))
         print(f"📸 REFERENCE IMAGES COUNT: {len(reference_images)}")
         for i, ref in enumerate(reference_images):
             print(f"  📸 Reference {i+1}: tag='{ref['tag']}', uri='{ref['uri'][:100]}...'")
@@ -475,21 +492,32 @@ class RunwayGenerator(BaseGenerator):
             # Update parameters so the enhanced prompt gets logged correctly
             parameters["prompt"] = optimized_prompt
         
-        # Log the complete, definitive API request being sent to Runway
+        # Use camelCase parameters from simplified flow service
+        prompt_text = parameters.get("promptText", prompt)
+        ratio = parameters.get("ratio", "1920:1080")
+        reference_images_param = parameters.get("referenceImages", reference_images)
+        
+        # Log the complete, definitive SDK call (Python SDK uses snake_case, converts to camelCase internally)
         complete_api_request = {
             "sdk_method": "client.text_to_image.create",
+            "python_sdk_parameters": {
+                "model": "gen4_image",
+                "prompt_text": prompt_text,  # ✅ Python SDK snake_case
+                "ratio": ratio,
+                "reference_images": reference_images_param  # ✅ Python SDK snake_case
+            },
+            "converted_to_http_api": {
+                "model": "gen4_image",
+                "promptText": prompt_text,  # ✅ HTTP API camelCase
+                "ratio": ratio,
+                "referenceImages": reference_images_param  # ✅ HTTP API camelCase
+            },
             "headers": {
                 "X-Runway-Version": "2024-11-06",
                 "Authorization": f"Bearer {settings.runway_api_key[:20]}...REDACTED",
                 "Content-Type": "application/json"
             },
-            "endpoint": "https://api.dev.runwayml.com/v1/text_to_image",
-            "parameters": {
-                "model": "gen4_image",
-                "prompt_text": prompt,
-                "ratio": parameters.get("ratio", "1920:1080"),
-                "reference_images": reference_images
-            }
+            "endpoint": "https://api.dev.runwayml.com/v1/text_to_image"
         }
         
         print("🚀 DEFINITIVE RUNWAY API REQUEST:")
@@ -497,12 +525,12 @@ class RunwayGenerator(BaseGenerator):
         logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
         logger.info(json.dumps(complete_api_request, indent=2))
         
-        # Log raw request payload that will be sent to Runway
+        # Log raw HTTP request payload that will be sent to Runway (SDK converts snake_case to camelCase)
         raw_request_payload = {
             "model": "gen4_image",
-            "prompt_text": prompt,
-            "ratio": parameters.get("ratio", "1920:1080"),
-            "reference_images": reference_images
+            "promptText": prompt_text,  # ✅ HTTP API camelCase (converted by SDK)
+            "ratio": ratio,
+            "referenceImages": reference_images_param  # ✅ HTTP API camelCase (converted by SDK)
         }
         print("📦 RAW REQUEST PAYLOAD TO RUNWAY:")
         print(json.dumps(raw_request_payload, indent=2))
@@ -510,12 +538,12 @@ class RunwayGenerator(BaseGenerator):
         logger.info(json.dumps(raw_request_payload, indent=2))
         
         try:
-            print(f"🌟 CALLING: self.client.text_to_image.create(model='gen4_image', prompt_text='{prompt}', ratio='{parameters.get('ratio', '1920:1080')}', reference_images={len(reference_images)} images)")
+            print(f"🌟 CALLING: self.client.text_to_image.create(model='gen4_image', prompt_text='{prompt_text}', ratio='{ratio}', reference_images={len(reference_images_param)} images)")
             task = self.client.text_to_image.create(
                 model="gen4_image",
-                prompt_text=prompt,
-                ratio=parameters.get("ratio", "1920:1080"),
-                reference_images=reference_images
+                prompt_text=prompt_text,  # ✅ Python SDK uses snake_case
+                ratio=ratio,
+                reference_images=reference_images_param  # ✅ Python SDK uses snake_case
             )
             
             task_id = task.id
@@ -709,15 +737,20 @@ class RunwayGenerator(BaseGenerator):
         if not input_image:
             raise Exception("No input image provided for image-to-video generation")
         
+        # Use camelCase parameters from simplified flow service
+        prompt_text = parameters.get("promptText", prompt)
+        ratio = parameters.get("ratio", "1280:720")
+        duration = parameters.get("duration", 5)
+        
         # Log the complete, definitive API request being sent to Runway
         complete_api_request = {
             "sdk_method": "client.image_to_video.create",
             "parameters": {
                 "model": "gen4_turbo",
-                "prompt_image": input_image,
-                "prompt_text": prompt,
-                "ratio": parameters.get("ratio", "1280:720"),
-                "duration": parameters.get("duration", 5)
+                "promptImage": input_image,  # ✅ Use camelCase
+                "promptText": prompt_text,  # ✅ Use camelCase
+                "ratio": ratio,
+                "duration": duration
             }
         }
         logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
@@ -726,10 +759,10 @@ class RunwayGenerator(BaseGenerator):
         try:
             task = self.client.image_to_video.create(
                 model="gen4_turbo",
-                prompt_image=input_image,
-                prompt_text=prompt,
-                ratio=parameters.get("ratio", "1280:720"),
-                duration=parameters.get("duration", 5)
+                prompt_image=input_image,  # ✅ Python SDK uses snake_case
+                prompt_text=prompt_text,  # ✅ Python SDK uses snake_case
+                ratio=ratio,
+                duration=duration
             )
             
             task_id = task.id
@@ -824,15 +857,18 @@ class RunwayGenerator(BaseGenerator):
             
             face_swap_prompt = f"Update the face of @{base_temp_tag} with @{temp_tag}"
             
+            # Use camelCase parameters from simplified flow service
+            ratio = parameters.get("ratio", "1920:1080")
+            
             # Log the complete, definitive API request being sent to Runway
             complete_api_request = {
                 "sdk_method": "client.text_to_image.create",
                 "operation": "face_swap",
                 "parameters": {
                     "model": "gen4_image",
-                    "prompt_text": face_swap_prompt,
-                    "ratio": parameters.get("ratio", "1920:1080"),
-                    "reference_images": reference_images
+                    "promptText": face_swap_prompt,  # ✅ Use camelCase
+                    "ratio": ratio,
+                    "referenceImages": reference_images  # ✅ Use camelCase
                 }
             }
             logger.info("🚀 DEFINITIVE RUNWAY API REQUEST (FACE SWAP):")
@@ -840,9 +876,9 @@ class RunwayGenerator(BaseGenerator):
             
             task = self.client.text_to_image.create(
                 model="gen4_image",
-                prompt_text=face_swap_prompt,
-                ratio=parameters.get("ratio", "1920:1080"),
-                reference_images=reference_images
+                prompt_text=face_swap_prompt,  # ✅ Python SDK uses snake_case
+                ratio=ratio,
+                reference_images=reference_images  # ✅ Python SDK uses snake_case
             )
             
             task_id = task.id
