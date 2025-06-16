@@ -28,6 +28,7 @@ from app.core.cache import get_cache, cache_result
 from app.core.circuit_breaker import get_circuit_breaker, CircuitConfig, CircuitBreakerOpenError
 from app.core.rate_limiter import check_all_rate_limits, RateLimitError
 from app.core.database import get_database
+from app.core.model_config import model_config
 
 logger = logging.getLogger(__name__)
 
@@ -590,19 +591,49 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         Fallback classification when LLM fails
         """
         
-        # First check for video intent
-        video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
-                         "make it move", "bring to life", "turn into video", "video version", 
-                         "moving", "motion", "animated", "video clip", "movie", "film"]
-        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        # Get video keywords from configuration
+        try:
+            video_keywords = model_config.get_video_keywords()
+            # Add any additional transform keywords from config
+            routing_rules = model_config.config.get("model_routing", {}).get("routing_rules", {})
+            video_config = routing_rules.get("video_detection", {})
+            transform_keywords = video_config.get("transform_keywords", [])
+            motion_keywords = video_config.get("motion_keywords", [])
+            motion_context = video_config.get("motion_context_required", [])
+            motion_exclusions = video_config.get("motion_exclusions", [])
+        except Exception as e:
+            logger.warning(f"Error loading video keywords from config: {e}, using defaults")
+            video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation"]
+            transform_keywords = ["transform this image into a video", "transform into video"]
+            motion_keywords = ["move"]
+            motion_context = ["image", "this"]
+            motion_exclusions = ["remove"]
+        
+        # Check for video intent with configuration-based detection
+        has_basic_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        has_transform_intent = any(keyword in user_prompt.lower() for keyword in transform_keywords)
+        
+        # Check motion keywords with context and exclusions
+        has_motion_intent = False
+        if motion_keywords:
+            for motion_word in motion_keywords:
+                if (motion_word in user_prompt.lower() and
+                    any(context_word in user_prompt.lower() for context_word in motion_context) and
+                    not any(exclusion in user_prompt.lower() for exclusion in motion_exclusions)):
+                    has_motion_intent = True
+                    break
+        
+        has_video_intent = has_basic_video_intent or has_transform_intent or has_motion_intent
         
         if has_video_intent:
             # Video flow fallback logic
             if not active_image and not uploaded_image and not referenced_image:
-                # Check for audio intent in fallback
-                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
-                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
-                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                # Check for audio intent using configuration
+                try:
+                    audio_keywords = model_config.get_audio_keywords()
+                except Exception as e:
+                    logger.warning(f"Error loading audio keywords: {e}, using defaults")
+                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice"]
                 has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
                 
                 if has_audio_intent:
@@ -613,10 +644,12 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     # MiniMax for text-to-video without audio
                     return ("NEW_VIDEO", user_prompt, "Fallback: Text-to-video (MiniMax)")
             elif active_image and not uploaded_image and not referenced_image:
-                # Check for audio intent in fallback too
-                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
-                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
-                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                # Check for audio intent using configuration
+                try:
+                    audio_keywords = model_config.get_audio_keywords()
+                except Exception as e:
+                    logger.warning(f"Error loading audio keywords: {e}, using defaults")
+                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice"]
                 has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
                 
                 if has_audio_intent:
@@ -637,7 +670,11 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             return ("NEW_IMAGE_REF", enhanced_prompt, "Fallback: New image with references/uploads")
             
         # Check for edit keywords when active image is present
-        edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
+        try:
+            edit_keywords = model_config.get_edit_keywords()
+        except Exception as e:
+            logger.warning(f"Error loading edit keywords: {e}, using defaults")
+            edit_keywords = ["edit", "change", "modify", "adjust", "improve", "enhance", "fix", "update"]
         has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
         
         if active_image and not uploaded_image and not referenced_image:
@@ -680,11 +717,17 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         IMPORTANT: Check for video intent FIRST before applying image rules
         """
         
-        # FIRST: Check for video intent in the prompt
+        # FIRST: Check for video intent in the prompt  
         video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
                          "make it move", "bring to life", "turn into video", "video version", 
-                         "moving", "motion", "animated", "video clip", "movie", "film", "make a video"]
-        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+                         "moving", "motion", "animated", "video clip", "movie", "film", "make a video", "flow naturally",
+                         "create a video"]
+        transform_keywords = ["transform this image into a video", "transform into video"]
+        
+        # Avoid false positives like "remove" triggering on "move"
+        has_video_intent = (any(keyword in user_prompt.lower() for keyword in video_keywords) or
+                           any(keyword in user_prompt.lower() for keyword in transform_keywords) or
+                           ("move" in user_prompt.lower() and ("image" in user_prompt.lower() or "this" in user_prompt.lower()) and "remove" not in user_prompt.lower()))
         
         # Debug video intent detection
         print(f"[DEBUG] CSV Rules: user_prompt='{user_prompt}'")
@@ -740,29 +783,38 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
     
     def _get_model_for_type(self, prompt_type: str, total_references: int = 0) -> str:
         """
-        Map prompt type to model based on CSV
-        Special rule: 2+ reference images → Runway (regardless of original CSV mapping)
+        Map prompt type to model using centralized configuration
+        Special rules are handled by the model config system
         """
-        model_mapping = {
-            # Image generation flows
-            "NEW_IMAGE": "black-forest-labs/flux-1.1-pro",
-            "NEW_IMAGE_REF": "runway_gen4_image",  # Updated: Runway for new images with references
-            "EDIT_IMAGE": "black-forest-labs/flux-kontext-max", 
-            "EDIT_IMAGE_REF": "runway_gen4_image",
-            # Video generation flows
-            "NEW_VIDEO": "minimax/video-01",  # MiniMax for all video generation (supports text-to-video and image-to-video)
-            "NEW_VIDEO_WITH_AUDIO": "google/veo-3",  # Veo 3 ONLY for text-to-video with audio (no working image)
-            "IMAGE_TO_VIDEO": "minimax/video-01",  # MiniMax for image-to-video (supports first_frame_image)
-            "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",  # MiniMax for image-to-video with audio
-            "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"  # MiniMax for reference-based video generation
-        }
-        
-        # Special rule: 2+ reference images always go to Runway (for image flows only)
-        if total_references >= 2 and prompt_type not in ["NEW_VIDEO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
-            print(f"[DEBUG] SIMPLIFIED: {total_references} reference images detected - routing to Runway instead of {model_mapping.get(prompt_type)}")
-            return "runway_gen4_image"
-        
-        return model_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
+        try:
+            # Use centralized model configuration
+            model = model_config.get_model_for_type(prompt_type, total_references)
+            
+            # Log special routing decisions
+            if total_references >= 2:
+                routing_rules = model_config.config.get("model_routing", {}).get("routing_rules", {})
+                multi_ref_config = routing_rules.get("multi_reference_routing", {})
+                if (multi_ref_config.get("enabled", True) and 
+                    prompt_type in multi_ref_config.get("applies_to", [])):
+                    print(f"[DEBUG] SIMPLIFIED: {total_references} reference images detected - routing to {model} via config rule")
+            
+            return model
+            
+        except Exception as e:
+            logger.error(f"Error getting model from config for {prompt_type}: {e}")
+            # Fallback to hardcoded mapping
+            fallback_mapping = {
+                "NEW_IMAGE": "black-forest-labs/flux-1.1-pro",
+                "NEW_IMAGE_REF": "runway_gen4_image",
+                "EDIT_IMAGE": "black-forest-labs/flux-kontext-max", 
+                "EDIT_IMAGE_REF": "runway_gen4_image",
+                "NEW_VIDEO": "minimax/video-01",
+                "NEW_VIDEO_WITH_AUDIO": "google/veo-3",
+                "IMAGE_TO_VIDEO": "minimax/video-01",
+                "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",
+                "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"
+            }
+            return fallback_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
     
     async def get_model_parameters(self, result: SimplifiedFlowResult, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Get model-specific parameters based on flow result (with caching)"""
@@ -920,7 +972,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         # First check for video intent
         video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
                          "make it move", "bring to life", "turn into video", "video version", 
-                         "moving", "motion", "animated", "video clip", "movie", "film"]
+                         "moving", "motion", "animated", "video clip", "movie", "film", "move", "transform"]
         has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
         
         if has_video_intent:
@@ -965,7 +1017,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 enhanced_prompt = user_prompt + ". Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
             elif active_image and not uploaded_image and not referenced_image:
                 # Check for edit intent
-                edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it"]
+                edit_keywords = ["edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it", "improve", "enhance", "fix", "update", "make the", "make this"]
                 has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
                 if has_edit_intent:
                     prompt_type = "EDIT_IMAGE"

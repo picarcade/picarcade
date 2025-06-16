@@ -1,0 +1,785 @@
+{
+  "test_summary": {
+    "total_scenarios": 26,
+    "execution_time": "0:01:55.025802",
+    "test_mode": "llm",
+    "api_key_available": true
+  },
+  "llm_results": {
+    "total_tests": 26,
+    "passed": 26,
+    "failed": 0,
+    "success_rate": "100.0%",
+    "average_processing_time_ms": "4423.5",
+    "cache_hits": 0,
+    "failure_analysis": {
+      "type_classification_errors": {},
+      "model_routing_errors": {}
+    }
+  },
+  "fallback_results": {
+    "message": "No Fallback tests were run"
+  },
+  "comparison": {
+    "message": "Cannot compare - missing results from one or both methods"
+  },
+  "detailed_results": {
+    "llm_tests": [
+      {
+        "scenario_name": "NEW_IMAGE_01_Basic",
+        "description": "Basic image generation without any references",
+        "prompt": "Create a beautiful sunset over mountains",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Create a beautiful sunset over mountains"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The user is requesting a new image without referencing any existing images. The flags indicate: active_image=False, uploaded_image=False, referenced_image=False. This is a straightforward text-to-image request with no video intent, so it's classified as NEW_IMAGE using Flux 1.1 Pro. Per the enhancement rules for NEW_IMAGE, the original prompt is maintained without changes.",
+          "processing_time_ms": 4252,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_02_Detailed",
+        "description": "Detailed prompt for new image generation",
+        "prompt": "Generate a photorealistic portrait of a young woman with brown hair and blue eyes",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Generate a photorealistic portrait of a young woman with brown hair and blue eyes"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Since active_image=False, uploaded_image=False, and referenced_image=False (no images present), this is classified as NEW_IMAGE. According to the enhancement rules for NEW_IMAGE, the original prompt should be used without modifications, as no enhancement is needed for this prompt type.",
+          "processing_time_ms": 2919,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_03_Style",
+        "description": "Style-specific image generation",
+        "prompt": "Create an abstract painting in the style of Van Gogh",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Create an abstract painting in the style of Van Gogh"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification: All image flags are False (active_image=False, uploaded_image=False, referenced_image=False), so this is a NEW_IMAGE request. No video keywords are present. Enhancement: For NEW_IMAGE type, the original prompt is returned unchanged according to the enhancement rules.",
+          "processing_time_ms": 3036,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_01_Named",
+        "description": "New image with named reference",
+        "prompt": "Create a portrait in the style of @vangogh",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Create a portrait in the style of @vangogh. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The flags show referenced_image=True (with @vangogh reference) but no active_image or uploaded_image. According to the classification rules, when only referenced_image=True, the type is NEW_IMAGE_REF. For NEW_IMAGE_REF, the enhancement adds the preservation text to maintain likeness while applying the reference style.",
+          "processing_time_ms": 3562,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_02_Uploaded",
+        "description": "New image with uploaded reference",
+        "prompt": "Generate an image inspired by this style",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 1
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Generate an image inspired by this style. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification: active_image=False, uploaded_image=True, referenced_image=False means this is a NEW_IMAGE_REF scenario according to the decision matrix. The user wants to create a new image inspired by the uploaded reference image. Enhancement: Made minor clarity improvements and added the preservation statement for NEW_IMAGE_REF as per the rules.",
+          "processing_time_ms": 3114,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_03_Multiple",
+        "description": "New image with multiple uploaded references - should route to Runway",
+        "prompt": "Combine the styles from these references",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 2
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Combine the styles from @reference_1. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Based on the flags (active_image=False, uploaded_image=True, referenced_image=False), this is classified as NEW_IMAGE_REF. The user wants to create a new image referencing the uploaded image's style. Enhanced prompt clarifies to preserve facial features and identity from the reference.",
+          "processing_time_ms": 3259,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_01_Basic",
+        "description": "Basic image editing",
+        "prompt": "Make the sky more vibrant",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Make the sky more vibrant. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Based on the flags (active_image=True, uploaded_image=False, referenced_image=False), we have only an active working image. The user wants to edit the sky to be more vibrant, which is an edit intent. Therefore, this is classified as EDIT_IMAGE. For enhancement, I maintained the original request and added the instruction to preserve other image aspects.",
+          "processing_time_ms": 3818,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_02_Color",
+        "description": "Color adjustment editing",
+        "prompt": "Change the color scheme to warmer tones",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Change the color scheme to warmer tones. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "active_image=True, uploaded_image=False, referenced_image=False indicates we have only a working image. The user wants to edit this image by changing its color scheme to warmer tones, which is an edit intent. Therefore, this is classified as EDIT_IMAGE. For enhancement, I maintained the original request and added the standard phrase for EDIT_IMAGE to preserve other aspects.",
+          "processing_time_ms": 3685,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_03_Object",
+        "description": "Object removal editing",
+        "prompt": "Remove the person from the background",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Remove the person from the background. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification: active_image=True, uploaded_image=False, referenced_image=False indicates we're working with just the active image. The prompt 'Remove the person from the background' shows clear edit intent with the word 'remove'. For EDIT_IMAGE type, we make minor clarity improvements and add the standard preservation clause.",
+          "processing_time_ms": 3075,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_04_Improve",
+        "description": "Vague improvement prompt",
+        "prompt": "Improve this image",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Improve this image. Enhance quality, lighting, and composition while maintaining all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "active_image=True, uploaded_image=False, referenced_image=False indicates we have only a working image. The prompt 'Improve this image' clearly indicates an edit intent rather than creating a new image. Following the rules for EDIT_IMAGE, I made minor edits to improve clarity and added the standard phrase about maintaining aspects of the original image.",
+          "processing_time_ms": 4223,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_01_Hair",
+        "description": "Hair style transfer with named reference",
+        "prompt": "Change the hair to match @blonde_hair",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Add hairstyle from @blonde_hair to @working_image. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification: active_image=True and referenced_image=True indicates EDIT_IMAGE_REF. The prompt shows a clear edit intent to change hair using a referenced image. Enhancement: Completely rewrote the prompt to clearly identify the TARGET (@working_image) and SOURCE (@blonde_hair), specifying the change (hairstyle) and maintaining other aspects.",
+          "processing_time_ms": 3651,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_02_Clothing",
+        "description": "Clothing transfer with uploaded reference",
+        "prompt": "Put the dress from the uploaded image on the person",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 1
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Add clothing from @reference_1 to @working_image. Maintain all other features of the person except for the dress."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification is EDIT_IMAGE_REF because active_image=True and uploaded_image=True. The prompt indicates a clear edit intent (putting a dress from an uploaded image onto a person in the working image). The TARGET is the working image (@working_image) and the SOURCE is the uploaded image (@reference_1) providing the dress style. I've rewritten the prompt to clearly specify what to change (clothing/dress) while maintaining other features.",
+          "processing_time_ms": 4368,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_03_Multiple",
+        "description": "Multiple aspect editing - should use Runway for 2+ refs",
+        "prompt": "Change the hair and clothing using these references",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": true,
+          "referenced_image": true,
+          "reference_count": 3
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Update hairstyle from @reference_1 and clothing from @reference_2 to @working_image. Maintain all other features and identity of the person in the working image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Since active_image=True AND uploaded_image=True, this is classified as EDIT_IMAGE_REF regardless of edit keywords. The prompt indicates a desire to change both hair and clothing using reference images. For EDIT_IMAGE_REF, I've completely rewritten the prompt following the structured format, identifying the working image as the TARGET and the uploaded references as SOURCES for the hair and clothing changes.",
+          "processing_time_ms": 3834,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_01_Basic",
+        "description": "Basic text-to-video generation",
+        "prompt": "Create a video of a cat walking in a garden",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Scene description: A cat walking gracefully through a garden. Visual style: Realistic and natural. Camera movement: Gentle tracking shot following the cat's movement. Main subject: A domestic cat with..."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The prompt contains clear video intent keywords ('Create a video') with no active, uploaded, or referenced images (all flags are False). There is no audio intent mentioned, so this classifies as NEW_VIDEO which uses the MiniMax model. The prompt has been enhanced to include scene description, visual style, camera movement, main subject details, background setting, lighting, and color palette to improve video generation results.",
+          "processing_time_ms": 6288,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_02_Action",
+        "description": "Action sequence video generation",
+        "prompt": "Generate a video of cars racing on a track",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Scene description: Cars racing at high speed on a professional race track with dramatic overtaking maneuvers. Visual style: Cinematic, realistic, high-energy footage with dynamic angles. Camera moveme..."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The prompt contains a clear video generation intent with 'Generate a video of' which matches video generation keywords. Given the flags (active_image=False, uploaded_image=False, referenced_image=False), this is classified as NEW_VIDEO without audio intent since there's no mention of specific audio requirements. The prompt is enhanced following the video enhancement rules to include scene description, visual style, camera movement, main subject, background setting, lighting/mood, color palette, and audio cues to create a more detailed and effective video generation prompt.",
+          "processing_time_ms": 7644,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_AUDIO_01_Singing",
+        "description": "Text-to-video with singing audio",
+        "prompt": "Create a video of a person singing a happy song",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3"
+        },
+        "actual": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3",
+          "enhanced_prompt": "Create a video of a person singing a happy song with a joyful expression. Scene description: A person stands in a well-lit space, smiling and singing enthusiastically. Visual style: Realistic and vibr..."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "I classified this as NEW_VIDEO_WITH_AUDIO because: 1) The prompt explicitly mentions 'Create a video', indicating video intent; 2) It mentions 'singing a happy song', indicating audio intent; 3) All image flags are False (active_image=False, uploaded_image=False, referenced_image=False), which means there's no existing image to work with. According to the rules, when there's video intent with audio intent and no images, the type is NEW_VIDEO_WITH_AUDIO using Veo 3 model. I enhanced the prompt to include scene description, visual style, camera movement, subject details, background, lighting, audio specifications, and color palette to optimize for video generation with audio.",
+          "processing_time_ms": 9254,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_AUDIO_02_Music",
+        "description": "Text-to-video with background music",
+        "prompt": "Generate a video with background music of nature sounds",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3"
+        },
+        "actual": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3",
+          "enhanced_prompt": "Generate a video with background music of nature sounds. Scene description: A serene natural landscape with flowing water, swaying trees, and wildlife. Visual style: Realistic, high-definition nature ..."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "This prompt clearly indicates video intent with 'Generate a video' and also mentions audio intent with 'background music of nature sounds'. Since there are no images available (all image flags are False), this is classified as NEW_VIDEO_WITH_AUDIO and should use Veo 3 model for text-to-video with audio generation. The prompt was enhanced to include detailed scene description, visual style, camera movement, and other elements needed for effective video generation with appropriate nature sounds.",
+          "processing_time_ms": 8040,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_TO_VIDEO_01_Basic",
+        "description": "Basic image-to-video animation",
+        "prompt": "Animate this image to show gentle movement",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Animate this image to show gentle movement"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The prompt contains video intent keywords ('animate', 'movement') and the flags show active_image=True, uploaded_image=False, referenced_image=False. This indicates the user wants to animate an existing image. Since there's no audio intent detected (no keywords like music, sound, voice, etc.), the classification is IMAGE_TO_VIDEO using MiniMax model. For IMAGE_TO_VIDEO, no specific enhancement is needed as per the rules.",
+          "processing_time_ms": 3954,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_TO_VIDEO_02_Specific",
+        "description": "Specific animation of image elements",
+        "prompt": "Make the water in this image flow naturally",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Make the water in this image flow naturally"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Based on the given flags (active_image=True, uploaded_image=False, referenced_image=False) and the prompt content, this is a request to animate water in an existing image. The prompt contains animation intent with 'flow naturally' which indicates video generation from the active image. Since there's no audio intent mentioned, the appropriate type is IMAGE_TO_VIDEO to be processed by MiniMax model. The prompt doesn't need enhancement for image-to-video conversions per the rules.",
+          "processing_time_ms": 4291,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_VIDEO_AUDIO_01_Singing",
+        "description": "Image-to-video with singing audio",
+        "prompt": "Animate this person singing a melody",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Animate this person singing a melody"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Classification is IMAGE_TO_VIDEO_WITH_AUDIO because: 1) There is a video generation intent with keywords 'animate' and 'singing', 2) There is an audio intent with keywords 'singing' and 'melody', 3) active_image=True and both uploaded_image and referenced_image are False. According to the rules, for this combination with audio intent, we classify as IMAGE_TO_VIDEO_WITH_AUDIO using MiniMax model. The prompt doesn't need enhancement since it's already clear for image-to-video with audio generation.",
+          "processing_time_ms": 4250,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_VIDEO_AUDIO_02_Nature",
+        "description": "Image-to-video with nature sounds",
+        "prompt": "Add sound to this nature scene",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Add sound to this nature scene"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The user wants to add sound to an existing image (active_image=True) and there are no uploaded or referenced images (both False). The prompt contains audio intent keywords ('sound') and is requesting to turn the image into a video with audio. Therefore, this is classified as IMAGE_TO_VIDEO_WITH_AUDIO which uses MiniMax model. No specific enhancement is needed for the prompt as per the rules for IMAGE_TO_VIDEO_WITH_AUDIO.",
+          "processing_time_ms": 3875,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_REF_VIDEO_01_Style",
+        "description": "Video generation with multiple style references",
+        "prompt": "Create a video combining elements from @style1 and @style2",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Create a video combining elements from @style1 and @style2"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The user prompt contains video intent ('Create a video') and references two image styles (@style1 and @style2). According to the flags, active_image=False, uploaded_image=False, referenced_image=True, which means there are named references in the prompt. Since there's video intent and referenced images are present, this is classified as EDIT_IMAGE_REF_TO_VIDEO for MiniMax (reference-based video).",
+          "processing_time_ms": 3548,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_REF_VIDEO_02_Transform",
+        "description": "Working image animated with reference style",
+        "prompt": "Transform this image into a video with @style reference",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Transform @working_image into a video using the style from @style. Maintain the core subject and composition while adding natural motion and animation."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The user prompt contains video generation intent with 'Transform this image into a video'. With active_image=True and referenced_image=True (via @style reference), this classifies as EDIT_IMAGE_REF_TO_VIDEO. The working image (@working_image) is the TARGET being transformed into video, while the @style reference provides the visual style (SOURCE).",
+          "processing_time_ms": 3859,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_01_Ambiguous_Edit",
+        "description": "Ambiguous edit prompt - should be classified as edit",
+        "prompt": "Make this better",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Make this better. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Since active_image=True, uploaded_image=False, and referenced_image=False, this is a case where only the active image is present. The user prompt 'Make this better' implies an edit intent (wanting to improve the existing image), so I classified it as EDIT_IMAGE. For EDIT_IMAGE prompts, the enhancement rule is to make minor edits to improve clarity and add 'Maintain all other aspects of the original image.'",
+          "processing_time_ms": 4606,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_02_Video_Motion",
+        "description": "Image animation request",
+        "prompt": "Make this image move gently",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Make this image move gently"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "The prompt contains video intent with the phrase 'make this image move', which indicates the user wants to animate the image. The flags show active_image=True, uploaded_image=False, and referenced_image=False, which means there is only a working image present. There is no audio intent mentioned in the prompt, so the classification is IMAGE_TO_VIDEO using MiniMax model. For IMAGE_TO_VIDEO, no specific enhancement is needed as per the rules.",
+          "processing_time_ms": 5050,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_03_Multiple_Refs",
+        "description": "Multiple named references should route to Runway",
+        "prompt": "Create an image using @style1 and @style2 references",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 2
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Create an image using @style1 and @style2 references. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Based on the flags, active_image=False, uploaded_image=False, referenced_image=True. This indicates there are named references in the prompt but no active working image. According to the classification rules, this maps to NEW_IMAGE_REF using Runway. The prompt enhancement for NEW_IMAGE_REF requires making minor clarity improvements and adding the preservation text.",
+          "processing_time_ms": 3556,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      }
+    ],
+    "fallback_tests": []
+  }
+}

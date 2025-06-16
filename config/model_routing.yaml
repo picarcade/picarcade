@@ -1,0 +1,237 @@
+# Model Routing Configuration
+# This file controls which AI models are used for different types of requests
+# Update models here and they will be automatically applied to the system
+
+model_routing:
+  description: "Centralized model routing configuration for all workflow types"
+  last_updated: "2025-06-16"
+  version: "1.0.0"
+  
+  # Image Generation Models
+  models:
+    image_generation:
+      NEW_IMAGE:
+        model: "black-forest-labs/flux-1.1-pro"
+        description: "Basic image generation without references"
+        cost_per_generation: 0.03
+        parameters:
+          width: 1024
+          height: 1024
+          num_outputs: 1
+          guidance_scale: 3.5
+          num_inference_steps: 28
+      
+      NEW_IMAGE_REF:
+        model: "runway_gen4_image"
+        description: "Image generation with reference images"
+        cost_per_generation: 0.08
+        fallback_model: "black-forest-labs/flux-1.1-pro"
+        special_rules:
+          multi_reference_threshold: 2
+          multi_reference_model: "runway_gen4_image"
+        parameters:
+          width: 1024
+          height: 1024
+          structure_control_strength: 0.3
+          style_control_strength: 0.7
+      
+      EDIT_IMAGE:
+        model: "black-forest-labs/flux-kontext-max"
+        description: "Working image editing without references"
+        cost_per_generation: 0.04
+        fallback_model: "black-forest-labs/flux-1.1-pro"
+        parameters:
+          width: 1024
+          height: 1024
+          num_outputs: 1
+          guidance_scale: 3.5
+          strength: 0.8
+      
+      EDIT_IMAGE_REF:
+        model: "runway_gen4_image"
+        description: "Working image editing with reference images"
+        cost_per_generation: 0.10
+        fallback_model: "black-forest-labs/flux-kontext-max"
+        special_rules:
+          multi_reference_threshold: 2
+          multi_reference_model: "runway_gen4_image"
+        parameters:
+          width: 1024
+          height: 1024
+          structure_control_strength: 0.5
+          style_control_strength: 0.6
+    
+    # Video Generation Models
+    video_generation:
+      NEW_VIDEO:
+        model: "minimax/video-01"
+        description: "Text-to-video without audio"
+        cost_per_generation: 0.20
+        parameters:
+          fps: 25
+          frames: 125
+          prompt_optimizer: true
+      
+      NEW_VIDEO_WITH_AUDIO:
+        model: "google/veo-3"
+        description: "Text-to-video with audio (reserved for audio-only scenarios)"
+        cost_per_generation: 0.35
+        fallback_model: "minimax/video-01"
+        special_rules:
+          audio_required: true
+          no_working_image: true
+          audio_keywords: 
+            - "singing"
+            - "song" 
+            - "music"
+            - "voice"
+            - "speak"
+            - "talk"
+            - "audio"
+            - "sound"
+            - "melody"
+            - "rhythm"
+            - "beat"
+            - "lyrics"
+        parameters:
+          resolution: "1280x720"
+          duration: 5
+          audio_quality: "high"
+      
+      IMAGE_TO_VIDEO:
+        model: "minimax/video-01"
+        description: "Animate existing image without audio"
+        cost_per_generation: 0.25
+        parameters:
+          fps: 25
+          frames: 125
+          prompt_optimizer: true
+      
+      IMAGE_TO_VIDEO_WITH_AUDIO:
+        model: "minimax/video-01"
+        description: "Animate existing image with audio"
+        cost_per_generation: 0.30
+        fallback_model: "minimax/video-01"
+        parameters:
+          fps: 25
+          frames: 125
+          prompt_optimizer: true
+      
+      EDIT_IMAGE_REF_TO_VIDEO:
+        model: "minimax/video-01"
+        description: "Video generation using reference images"
+        cost_per_generation: 0.35
+        parameters:
+          fps: 25
+          frames: 125
+          prompt_optimizer: true
+
+  # Routing Rules Configuration
+  routing_rules:
+    multi_reference_routing:
+      enabled: true
+      threshold: 2
+      target_model: "runway_gen4_image"
+      applies_to: 
+        - "NEW_IMAGE_REF"
+        - "EDIT_IMAGE_REF"
+      description: "Route 2+ reference images to Runway for better quality"
+    
+    audio_detection:
+      enabled: true
+      audio_keywords:
+        - "singing"
+        - "sing" 
+        - "song"
+        - "music"
+        - "audio"
+        - "sound"
+        - "voice"
+        - "speak"
+        - "talk"
+        - "lyrics"
+        - "melody"
+        - "chorus"
+        - "verse"
+        - "tune"
+        - "rhythm"
+        - "beat"
+        - "vocal"
+        - "microphone"
+        - "saying"
+        - "says"
+        - "said"
+        - "tells"
+        - "telling"
+        - "announces"
+        - "whispers"
+        - "shouts"
+        - "screams"
+        - "background music"
+        - "nature sounds"
+      video_audio_model: "google/veo-3"
+      image_audio_model: "minimax/video-01"
+    
+    video_detection:
+      enabled: true
+      video_keywords:
+        - "create video"
+        - "make video"
+        - "generate video"
+        - "video of"
+        - "animate"
+        - "animation"
+        - "make it move"
+        - "bring to life"
+        - "turn into video"
+        - "video version"
+        - "moving"
+        - "motion"
+        - "animated"
+        - "video clip"
+        - "movie"
+        - "film"
+        - "flow naturally"
+        - "create a video"
+      transform_keywords:
+        - "transform this image into a video"
+        - "transform into video"
+      motion_keywords: 
+        - "move"
+        - "movement"
+      motion_context_required: 
+        - "image"
+        - "this"
+      motion_exclusions: 
+        - "remove"
+    
+    edit_detection:
+      enabled: true
+      edit_keywords:
+        - "edit"
+        - "change"
+        - "modify"
+        - "adjust"
+        - "add"
+        - "remove"
+        - "make it"
+        - "turn it"
+        - "improve"
+        - "enhance"
+        - "fix"
+        - "update"
+        - "make the"
+        - "make this"
+
+  # Fallback Configuration
+  fallback_configuration:
+    circuit_breaker_enabled: true
+    fallback_rules:
+      no_images: "NEW_IMAGE"
+      working_image_only: "EDIT_IMAGE"
+      references_only: "NEW_IMAGE_REF"
+      working_plus_references: "EDIT_IMAGE_REF"
+    default_models:
+      image: "black-forest-labs/flux-1.1-pro"
+      video: "minimax/video-01"
+      edit: "black-forest-labs/flux-kontext-max"

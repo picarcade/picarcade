@@ -21,7 +21,7 @@ from app.services.generators.replicate import ReplicateGenerator
 from app.services.session_manager import session_manager
 from app.services.reference_service import ReferenceService
 from app.services.virtual_tryon import VirtualTryOnService
-from app.services.enhanced_workflow_service import EnhancedWorkflowService
+from app.services.simplified_flow_service import simplified_flow
 from app.core.logging import api_logger
 from app.api.v1.auth import get_current_user
 from typing import Optional, Dict, Any
@@ -31,7 +31,7 @@ router = APIRouter()
 # Initialize services
 intent_parser = BasicIntentParser()
 model_router = ModelRouter()
-enhanced_workflow_service = EnhancedWorkflowService()
+# Enhanced workflow service removed - using simplified_flow instead
 
 # Initialize generators  
 def get_runway_generator():
@@ -68,36 +68,39 @@ async def generate_content(
         
         # Get current working image from session if available
         current_working_image = None
-        print(f"[DEBUG] API: Request session_id: {request.session_id}")
-        print(f"[DEBUG] API: Request user_id: {request.user_id}")
+        api_logger.debug("API request details", extra={"session_id": request.session_id, "user_id": request.user_id})
         
         # Auto-generate session ID if not provided (for conversational continuity)
         effective_session_id = request.session_id
         if not effective_session_id:
             timestamp = int(time.time())
             effective_session_id = f"auto_session_{request.user_id}_{timestamp}"
-            print(f"[DEBUG] API: Auto-generated session_id: {effective_session_id}")
+            api_logger.debug("Auto-generated session_id", extra={"session_id": effective_session_id})
         
         current_working_image = await session_manager.get_current_working_image(effective_session_id)
-        print(f"[DEBUG] API: Retrieved working image: {current_working_image}")
+        api_logger.debug("Retrieved working image", extra={"working_image": current_working_image})
         
         # Validate working image
         if current_working_image:
             if not current_working_image.startswith(('http://', 'https://')):
-                print(f"[WARNING] API: Invalid working image URL format: {current_working_image}")
+                api_logger.debug("Invalid working image URL format", extra={"working_image": current_working_image})
                 current_working_image = None
             elif len(current_working_image.strip()) == 0:
-                print(f"[WARNING] API: Empty working image URL")
+                api_logger.debug("Empty working image URL")
                 current_working_image = None
             else:
-                print(f"[DEBUG] API: Valid working image found: {current_working_image}")
+                api_logger.debug("Valid working image found", extra={"working_image": current_working_image})
         
         # SIMPLIFIED FLOW: Determine boolean flags for CSV decision matrix
         active_image = bool(current_working_image)
         uploaded_image = bool(request.uploaded_images and len(request.uploaded_images) > 0)
         referenced_image = bool(ReferenceService.has_references(request.prompt))
         
-        print(f"[DEBUG] SIMPLIFIED: Boolean flags - Active: {active_image}, Uploaded: {uploaded_image}, Referenced: {referenced_image}")
+        api_logger.debug("Simplified flow flags", extra={
+            "active_image": active_image, 
+            "uploaded_image": uploaded_image, 
+            "referenced_image": referenced_image
+        })
         
         # Process through simplified flow
         flow_result = await simplified_flow.process_user_request(
@@ -114,18 +117,20 @@ async def generate_content(
             user_id=request.user_id  # Pass user_id for Sprint 3 infrastructure
         )
         
-        print(f"[DEBUG] SIMPLIFIED: Flow result - Type: {flow_result.prompt_type.value}, Model: {flow_result.model_to_use}")
-        print(f"[DEBUG] SIMPLIFIED: Enhanced prompt: {flow_result.enhanced_prompt}")
+        api_logger.debug("Simplified flow result", extra={
+            "prompt_type": flow_result.prompt_type.value,
+            "model": flow_result.model_to_use,
+            "enhanced_prompt_length": len(flow_result.enhanced_prompt)
+        })
         
         # Handle reference processing if needed
         reference_images = []
         if referenced_image:
-            print(f"[DEBUG] SIMPLIFIED: Processing references from prompt")
+            api_logger.debug("Processing references from prompt")
             if current_working_image:
                 # For EDIT_IMAGE_REF, skip reference service enhancement to preserve our structured prompt
                 if flow_result.prompt_type.value == "EDIT_IMAGE_REF":
-                    print(f"[DEBUG] SIMPLIFIED: Keeping structured prompt from simplified flow for EDIT_IMAGE_REF")
-                    print(f"[DEBUG] SIMPLIFIED: Original enhanced prompt: {flow_result.enhanced_prompt}")
+                    api_logger.debug("Keeping structured prompt for EDIT_IMAGE_REF", extra={"enhanced_prompt_length": len(flow_result.enhanced_prompt)})
                     
                     # Just parse references without enhancing the prompt
                     reference_images, missing_tags = await ReferenceService.parse_reference_mentions(
@@ -133,7 +138,7 @@ async def generate_content(
                         request.user_id
                     )
                     if missing_tags:
-                        print(f"[WARNING] SIMPLIFIED: Missing references: {missing_tags}")
+                        api_logger.debug("Missing references", extra={"missing_tags": missing_tags})
                 else:
                     # For other types, use full reference service enhancement
                     enhanced_prompt, reference_images = await ReferenceService.enhance_prompt_with_working_image(
@@ -149,9 +154,9 @@ async def generate_content(
                     request.user_id
                 )
                 if missing_tags:
-                    print(f"[WARNING] SIMPLIFIED: Missing references: {missing_tags}")
+                    api_logger.debug("Missing references", extra={"missing_tags": missing_tags})
             
-            print(f"[DEBUG] SIMPLIFIED: Found {len(reference_images)} reference images")
+            api_logger.debug("Found reference images", extra={"count": len(reference_images)})
         
         # Convert simplified flow result to legacy format for compatibility
         from app.models.generation import IntentAnalysis, CreativeIntent
@@ -187,18 +192,18 @@ async def generate_content(
         request.current_working_image = current_working_image
         request.reference_images = reference_images
         
-        print(f"[DEBUG] SIMPLIFIED: Final intent: {basic_intent_value}, Model: {flow_result.model_to_use}")
+        api_logger.debug("Final intent and model", extra={"intent": basic_intent_value, "model": flow_result.model_to_use})
         
         # Handle virtual try-on requests using the existing multi-image workflow
         # Note: Skip the dedicated virtual try-on service for now since it's not implemented
         # Virtual try-on will be handled by the regular generation pipeline with proper model selection
         if intent_analysis.detected_intent.value == "virtual_tryon":
-            print(f"[DEBUG] API: Virtual try-on request detected - will use multi-image workflow")
+            api_logger.debug("Virtual try-on request detected - using multi-image workflow")
             # Continue with normal generation flow using the enhanced model selection
             # The multi-image kontext model will handle the virtual try-on
         
         # Phase 2: Route to optimal model - SIMPLIFIED using CSV-based decision
-        print(f"[DEBUG] SIMPLIFIED: Using CSV-based model routing")
+        api_logger.debug("Using CSV-based model routing")
         
         # Build context for model parameters
         context = {
@@ -214,14 +219,16 @@ async def generate_content(
                     "tag": ref_img.tag
                 })
         
-        print(f"[DEBUG] API: Context for model parameters: {context}")
-        print(f"[DEBUG] API: Flow result type: {flow_result.prompt_type.value}")
-        print(f"[DEBUG] API: Model to use: {flow_result.model_to_use}")
+        api_logger.debug("Model parameters context", extra={
+            "context": context,
+            "flow_type": flow_result.prompt_type.value,
+            "model": flow_result.model_to_use
+        })
         
         # Get model parameters from simplified flow
         model_params = await simplified_flow.get_model_parameters(flow_result, context)
         
-        print(f"[DEBUG] API: Final model parameters: {model_params}")
+        api_logger.debug("Final model parameters", extra={"params": model_params})
         
         # Create routing decision using simplified flow result
         routing_decision = {
@@ -233,27 +240,28 @@ async def generate_content(
             "estimated_time": 30     # Default time estimate
         }
         
-        print(f"[DEBUG] SIMPLIFIED: Selected model: {flow_result.model_to_use}")
-        print(f"[DEBUG] SIMPLIFIED: Model parameters: {model_params}")
+        api_logger.debug("Simplified flow result", extra={"model": flow_result.model_to_use, "params": model_params})
         
         # Phase 3: Execute generation
         selected_model = routing_decision["model"]
         parameters = routing_decision["parameters"]
         
-        print(f"[DEBUG] API: Router selected model: {selected_model}")
-        print(f"[DEBUG] API: Router parameters: {parameters}")
-        print(f"[DEBUG] API: Router routing reason: {routing_decision.get('routing_reason')}")
+        api_logger.debug("Router selection", extra={
+            "model": selected_model,
+            "parameters": parameters,
+            "routing_reason": routing_decision.get('routing_reason')
+        })
         
         # Enhanced image selection logic for virtual try-on scenarios
         image_source = None
         
         # Debug: Log all image sources
-        print(f"[DEBUG] Image selection analysis:")
-        print(f"[DEBUG]   current_working_image: {current_working_image}")
-        print(f"[DEBUG]   request.uploaded_images: {request.uploaded_images}")
-        print(f"[DEBUG]   uploaded_images count: {len(request.uploaded_images) if request.uploaded_images else 0}")
-        print(f"[DEBUG]   detected_intent: {intent_analysis.detected_intent.value if 'intent_analysis' in locals() and intent_analysis else 'unknown'}")
-        print(f"[DEBUG]   flow_result: {flow_result.prompt_type.value if flow_result else 'None'}")
+        api_logger.debug("Image selection analysis", extra={
+            "working_image": current_working_image,
+            "uploaded_count": len(request.uploaded_images) if request.uploaded_images else 0,
+            "detected_intent": intent_analysis.detected_intent.value if 'intent_analysis' in locals() and intent_analysis else 'unknown',
+            "flow_type": flow_result.prompt_type.value if flow_result else 'None'
+        })
         
         # Check if this is a reference styling request (virtual try-on OR face swap)
         # Using simplified flow data instead of enhanced_intent
@@ -289,20 +297,19 @@ async def generate_content(
             )
         )
         
-        print(f"[DEBUG] Reference styling conditions:")
-        print(f"[DEBUG]   has_working_image: {bool(current_working_image)}")
-        print(f"[DEBUG]   has_uploaded_images: {bool(request.uploaded_images and len(request.uploaded_images) > 0)}")
-        print(f"[DEBUG]   has_prompt_references: {has_prompt_references}")
-        print(f"[DEBUG]   intent_is_edit: {('intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value in ['edit_image'])}")
-        print(f"[DEBUG]   is_reference_styling: {is_reference_styling}")
-        print(f"[DEBUG]   is_face_swap: {is_face_swap}")
-        print(f"[DEBUG]   flow_reasoning: {flow_reasoning}")
-        print(f"[DEBUG]   IS_REFERENCE_SCENARIO: {is_reference_scenario}")
-        print(f"[DEBUG]   USES_RUNWAY_REFERENCES: {uses_runway_references}")
+        api_logger.debug("Reference styling conditions", extra={
+            "has_working_image": bool(current_working_image),
+            "has_uploaded_images": bool(request.uploaded_images and len(request.uploaded_images) > 0),
+            "has_prompt_references": has_prompt_references,
+            "is_reference_styling": is_reference_styling,
+            "is_face_swap": is_face_swap,
+            "is_reference_scenario": is_reference_scenario,
+            "uses_runway_references": uses_runway_references
+        })
         
         # Set up Runway reference images for styling workflows
         if uses_runway_references:
-            print(f"[DEBUG] Setting up Runway references for {flow_result.prompt_type.value}")
+            api_logger.debug("Setting up Runway references", extra={"flow_type": flow_result.prompt_type.value})
             
             # Use existing reference images from ReferenceService, plus working image if needed
             runway_reference_images = []
@@ -314,7 +321,7 @@ async def generate_content(
                         "uri": ref_img.uri,
                         "tag": ref_img.tag
                     })
-                    print(f"[DEBUG] Added prompt reference: @{ref_img.tag} -> {ref_img.uri}")
+                    api_logger.debug("Added prompt reference", extra={"tag": ref_img.tag, "uri": ref_img.uri})
             
             # Add working image as base reference if not already included
             if current_working_image:
@@ -328,9 +335,9 @@ async def generate_content(
                         "uri": current_working_image,
                         "tag": "working_image"
                     })
-                    print(f"[DEBUG] Added working image reference: {current_working_image}")
+                    api_logger.debug("Added working image reference", extra={"image": current_working_image})
                 else:
-                    print(f"[DEBUG] Working image already included in references")
+                    api_logger.debug("Working image already included in references")
             
             # Add uploaded images as additional references
             if request.uploaded_images:
@@ -339,7 +346,7 @@ async def generate_content(
                         "uri": uploaded_image,
                         "tag": f"reference_{i+1}" if flow_result.prompt_type.value == "EDIT_IMAGE_REF" else f"hair_reference_{i+1}"
                     })
-                    print(f"[DEBUG] Added uploaded image reference: {uploaded_image}")
+                    api_logger.debug("Added uploaded image reference", extra={"image": uploaded_image})
             
             # Update request with all reference images for Runway generator
             if runway_reference_images:
@@ -348,7 +355,7 @@ async def generate_content(
                     ReferenceImage(uri=ref["uri"], tag=ref["tag"]) 
                     for ref in runway_reference_images
                 ]
-                print(f"[DEBUG] Set {len(runway_reference_images)} reference images for Runway")
+                api_logger.debug("Set reference images for Runway", extra={"count": len(runway_reference_images)})
                 
                 # Also add to parameters for backward compatibility
                 parameters["reference_images"] = runway_reference_images
@@ -356,9 +363,10 @@ async def generate_content(
         
         if is_face_swap and current_working_image and request.uploaded_images:
             # Face swap with working image: Create reference from uploaded image and use Runway
-            print(f"[DEBUG] Face swap detected - will use Runway with references:")
-            print(f"[DEBUG]   Base person (working image): {current_working_image}")
-            print(f"[DEBUG]   Face source (uploaded): {request.uploaded_images[0]}")
+            api_logger.debug("Face swap detected", extra={
+                "base_image": current_working_image,
+                "source_image": request.uploaded_images[0]
+            })
             
             # Set parameters to trigger face swap processing
             parameters["face_swap_base_image"] = current_working_image  # Base person
@@ -369,16 +377,14 @@ async def generate_content(
             
         elif is_face_swap and not current_working_image and request.uploaded_images:
             # Face swap without working image: User uploaded the base image, needs a reference face
-            print(f"[DEBUG] Face swap detected but no working image - user needs to provide source face:")
-            print(f"[DEBUG]   Base image (uploaded): {request.uploaded_images[0]}")
-            print(f"[DEBUG]   Need: Face source image to swap onto the base")
+            api_logger.debug("Face swap without working image", extra={"base_image": request.uploaded_images[0]})
             
             # For now, just use the uploaded image as base and rely on prompt engineering
             # In the future, we could prompt user to provide a second image
             parameters["image"] = request.uploaded_images[0]
             parameters["uploaded_image"] = request.uploaded_images[0]
             image_source = f"uploaded_image:{request.uploaded_images[0]}"
-            print(f"[DEBUG] Using uploaded image as base for face modification: {request.uploaded_images[0]}")
+            api_logger.debug("Using uploaded image as base for face modification", extra={"image": request.uploaded_images[0]})
             
         elif is_reference_scenario:
             # Virtual try-on: Use working image as person, uploaded as clothing reference
@@ -386,9 +392,10 @@ async def generate_content(
             parameters["uploaded_image"] = current_working_image  # Backward compatibility
             parameters["reference_image"] = request.uploaded_images[0]  # Clothing reference
             image_source = f"virtual_tryon:person={current_working_image},clothing={request.uploaded_images[0]}"
-            print(f"[DEBUG] Virtual try-on detected:")
-            print(f"[DEBUG]   Person (working image): {current_working_image}")
-            print(f"[DEBUG]   Clothing reference (uploaded): {request.uploaded_images[0]}")
+            api_logger.debug("Virtual try-on detected", extra={
+                "person_image": current_working_image,
+                "clothing_reference": request.uploaded_images[0]
+            })
         elif flow_result.prompt_type.value == "NEW_IMAGE_REF":
             # NEW_IMAGE_REF: Use reference image as input for Kontext
             reference_image_url = None
@@ -397,74 +404,80 @@ async def generate_content(
                 # Use first reference image from @mentions
                 reference_image_url = request.reference_images[0].uri
                 image_source = f"new_image_ref:reference={reference_image_url}"
-                print(f"[DEBUG] NEW_IMAGE_REF with @reference: {reference_image_url}")
+                api_logger.debug("NEW_IMAGE_REF with @reference", extra={"reference": reference_image_url})
             elif request.uploaded_images and len(request.uploaded_images) > 0:
                 # Use uploaded image as reference
                 reference_image_url = request.uploaded_images[0]
                 image_source = f"new_image_ref:uploaded={reference_image_url}"
-                print(f"[DEBUG] NEW_IMAGE_REF with upload: {reference_image_url}")
+                api_logger.debug("NEW_IMAGE_REF with upload", extra={"reference": reference_image_url})
             
             if reference_image_url:
                 parameters["image"] = reference_image_url  # Input image for Kontext
                 parameters["uploaded_image"] = reference_image_url  # Backward compatibility
-                print(f"[DEBUG] NEW_IMAGE_REF using reference as input: {reference_image_url}")
+                api_logger.debug("NEW_IMAGE_REF using reference as input", extra={"reference": reference_image_url})
             else:
-                print(f"[ERROR] NEW_IMAGE_REF classification but no reference image found!")
-                print(f"[ERROR] request.reference_images: {getattr(request, 'reference_images', None)}")
-                print(f"[ERROR] request.uploaded_images: {request.uploaded_images}")
+                api_logger.debug("NEW_IMAGE_REF classification but no reference image found", extra={
+                    "reference_images": getattr(request, 'reference_images', None),
+                    "uploaded_images": request.uploaded_images
+                })
         elif current_working_image:
             # Standard editing: Use current working image from session for continued editing
             parameters["uploaded_image"] = current_working_image
             parameters["image"] = current_working_image
             image_source = f"working_image:{current_working_image}"
-            print(f"[DEBUG] Using working image from session: {current_working_image}")
+            api_logger.debug("Using working image from session", extra={"image": current_working_image})
         elif request.uploaded_images and len(request.uploaded_images) > 0:
             # New upload: Use newly uploaded image
             parameters["uploaded_image"] = request.uploaded_images[0]  # Use first uploaded image
             parameters["image"] = request.uploaded_images[0]  # Alternative parameter name
             image_source = f"uploaded_image:{request.uploaded_images[0]}"
-            print(f"[DEBUG] Using uploaded image: {request.uploaded_images[0]}")
+            api_logger.debug("Using uploaded image", extra={"image": request.uploaded_images[0]})
         
         # Log image source for debugging
         if selected_model == "flux-kontext":
-            print(f"[DEBUG] flux-kontext will use image: {parameters.get('image', 'NO_IMAGE_FOUND')}")
-            print(f"[DEBUG] Image source: {image_source or 'no_image'}")
+            api_logger.debug("flux-kontext image info", extra={
+                "image": parameters.get('image', 'NO_IMAGE_FOUND'),
+                "source": image_source or 'no_image'
+            })
             if not parameters.get('image'):
-                print(f"[ERROR] flux-kontext requires an image but none was provided!")
-                print(f"[ERROR] current_working_image: {current_working_image}")
-                print(f"[ERROR] uploaded_images: {request.uploaded_images}")
-                print(f"[ERROR] session_id: {request.session_id}")
+                api_logger.debug("flux-kontext requires image but none provided", extra={
+                    "working_image": current_working_image,
+                    "uploaded_images": request.uploaded_images,
+                    "session_id": request.session_id
+                })
         
         # Choose generator based on model - FORCE Runway if references present OR face swap
-        print(f"[DEBUG] API: Selecting generator for model: {selected_model}")
-        print(f"[DEBUG] API: Has references: {bool(request.reference_images)}")
-        print(f"[DEBUG] API: Is face swap: {parameters.get('is_face_swap', False)}")
+        api_logger.debug("Selecting generator", extra={
+            "model": selected_model,
+            "has_references": bool(request.reference_images),
+            "is_face_swap": parameters.get('is_face_swap', False)
+        })
         
         if parameters.get("is_face_swap", False):
-            print(f"[DEBUG] API: Using FRESH RunwayGenerator for face swap")
+            api_logger.debug("Using FRESH RunwayGenerator for face swap")
             generator = get_runway_generator()  # Create fresh instance!
             # Face swap will be handled specially in the generator
         elif uses_runway_references:
-            print(f"[DEBUG] API: Using FRESH RunwayGenerator due to runway references workflow")
+            api_logger.debug("Using FRESH RunwayGenerator due to runway references workflow")
             generator = get_runway_generator()  # Create fresh instance!
         elif "runway" in selected_model:
-            print(f"[DEBUG] API: Using FRESH RunwayGenerator for {selected_model}")
+            api_logger.debug("Using FRESH RunwayGenerator", extra={"model": selected_model})
             generator = get_runway_generator()  # Create fresh instance!
             # Don't override the type if it was already set by the model router (e.g., "image_to_video")
             if "type" not in parameters and 'intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value == "generate_video":
                 parameters["type"] = "video"
         elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model or "minimax" in selected_model:
-            print(f"[DEBUG] API: Using FRESH ReplicateGenerator for {selected_model}")
+            api_logger.debug("Using FRESH ReplicateGenerator", extra={"model": selected_model})
             generator = get_replicate_generator()  # Create fresh instance!
             parameters["model"] = selected_model
             
             # For video models that need input images, ensure the working image is passed
             if "video" in selected_model and current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
-                print(f"[DEBUG] API: Video model needs input image - setting from working image: {current_working_image}")
+                api_logger.debug("Video model needs input image", extra={"working_image": current_working_image})
                 parameters["image"] = current_working_image
                 parameters["uploaded_image"] = current_working_image
         else:
-            print(f"[DEBUG] API: No matching generator found for {selected_model}, falling back to FRESH ReplicateGenerator with flux-1.1-pro")
+            api_logger.debug("No matching generator found, falling back", extra={"selected_model": selected_model, "fallback": "flux-1.1-pro"})
             # Default fallback
             generator = get_replicate_generator()  # Create fresh instance!
             parameters["model"] = "flux-1.1-pro"
@@ -472,7 +485,7 @@ async def generate_content(
         # Add uploaded images to parameters for generator access
         if request.uploaded_images:
             parameters["uploaded_images"] = request.uploaded_images
-            print(f"[DEBUG] API: Added {len(request.uploaded_images)} uploaded_images to parameters")
+            api_logger.debug("Added uploaded_images to parameters", extra={"count": len(request.uploaded_images)})
 
         # Execute generation
         result = await generator.generate(
@@ -498,7 +511,7 @@ async def generate_content(
         
         # Update session with newly generated image for future edits
         if result.success and result.output_url:
-            print(f"[DEBUG] API: Setting working image in session {effective_session_id}: {result.output_url}")
+            api_logger.debug("Setting working image in session", extra={"session_id": effective_session_id, "image_url": result.output_url})
             await session_manager.set_current_working_image(
                 session_id=effective_session_id,
                 image_url=result.output_url,
@@ -507,7 +520,7 @@ async def generate_content(
             
             # Verify the working image was set correctly
             verification = await session_manager.get_current_working_image(effective_session_id)
-            print(f"[DEBUG] API: Verification - working image is now: {verification}")
+            api_logger.debug("Working image verification", extra={"verification": verification})
             
             # Return the effective session_id to the frontend for future requests
             if not result.metadata:
@@ -730,10 +743,10 @@ async def store_generation_result(
         
         success = await db_manager.insert_generation_history(history_data)
         if not success:
-            print(f"Failed to store generation result for {result.generation_id}")
+            api_logger.debug("Failed to store generation result", extra={"generation_id": result.generation_id})
         
     except Exception as e:
-        print(f"Error storing generation result: {e}")
+        api_logger.debug("Error storing generation result", extra={"error": str(e)})
 
 @router.post("/session/set-working-image")
 async def set_working_image(
@@ -750,7 +763,7 @@ async def set_working_image(
         if not all([session_id, image_url, user_id]):
             raise HTTPException(status_code=400, detail="session_id, image_url, and user_id are required")
         
-        print(f"[DEBUG] API: Setting working image for session {session_id}: {image_url}")
+        api_logger.debug("Setting working image for session", extra={"session_id": session_id, "image_url": image_url})
         
         # Set the working image in the session
         await session_manager.set_current_working_image(
@@ -761,7 +774,7 @@ async def set_working_image(
         
         # Verify it was set correctly
         verification = await session_manager.get_current_working_image(session_id)
-        print(f"[DEBUG] API: Verification - working image is now: {verification}")
+        api_logger.debug("Working image verification", extra={"verification": verification})
         
         return {
             "success": True,
@@ -772,7 +785,7 @@ async def set_working_image(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ERROR] Failed to set working image: {e}")
+        api_logger.debug("Failed to set working image", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Error setting working image: {str(e)}")
 
 async def cleanup_temporary_references_task(user_id: str, generation_id: str):
@@ -780,4 +793,4 @@ async def cleanup_temporary_references_task(user_id: str, generation_id: str):
     try:
         await ReferenceService.cleanup_temporary_references(user_id, generation_id)
     except Exception as e:
-        print(f"Error cleaning up temporary references for {generation_id}: {e}") 
+        api_logger.debug("Error cleaning up temporary references", extra={"generation_id": generation_id, "error": str(e)}) 

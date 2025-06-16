@@ -1,0 +1,796 @@
+{
+  "test_summary": {
+    "total_scenarios": 26,
+    "execution_time": "0:00:07.899315",
+    "test_mode": "fallback",
+    "api_key_available": true
+  },
+  "llm_results": {
+    "message": "No LLM tests were run"
+  },
+  "fallback_results": {
+    "total_tests": 26,
+    "passed": 21,
+    "failed": 5,
+    "success_rate": "80.8%",
+    "average_processing_time_ms": "264.7",
+    "cache_hits": 0,
+    "failure_analysis": {
+      "type_classification_errors": {
+        "EDIT_IMAGE \u2192 IMAGE_TO_VIDEO": 1,
+        "NEW_VIDEO_WITH_AUDIO \u2192 NEW_IMAGE": 1,
+        "IMAGE_TO_VIDEO \u2192 EDIT_IMAGE": 1,
+        "IMAGE_TO_VIDEO_WITH_AUDIO \u2192 EDIT_IMAGE": 1,
+        "EDIT_IMAGE_REF_TO_VIDEO \u2192 NEW_IMAGE_REF": 1
+      },
+      "model_routing_errors": {
+        "black-forest-labs/flux-kontext-max \u2192 minimax/video-01": 1,
+        "google/veo-3 \u2192 black-forest-labs/flux-1.1-pro": 1,
+        "minimax/video-01 \u2192 black-forest-labs/flux-kontext-max": 2,
+        "minimax/video-01 \u2192 runway_gen4_image": 1
+      }
+    }
+  },
+  "comparison": {
+    "message": "Cannot compare - missing results from one or both methods"
+  },
+  "detailed_results": {
+    "llm_tests": [],
+    "fallback_tests": [
+      {
+        "scenario_name": "NEW_IMAGE_01_Basic",
+        "description": "Basic image generation without any references",
+        "prompt": "Create a beautiful sunset over mountains",
+        "classification_method": "llm",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Create a beautiful sunset over mountains"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "This is classified as NEW_IMAGE because all image flags are False (active_image=False, uploaded_image=False, referenced_image=False) and there is no video intent detected. For NEW_IMAGE type, the original prompt is returned unchanged as per the enhancement rules.",
+          "processing_time_ms": 3070,
+          "circuit_breaker_state": "closed",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_02_Detailed",
+        "description": "Detailed prompt for new image generation",
+        "prompt": "Generate a photorealistic portrait of a young woman with brown hair and blue eyes",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Generate a photorealistic portrait of a young woman with brown hair and blue eyes"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 146,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_03_Style",
+        "description": "Style-specific image generation",
+        "prompt": "Create an abstract painting in the style of Van Gogh",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Create an abstract painting in the style of Van Gogh"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 146,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_01_Named",
+        "description": "New image with named reference",
+        "prompt": "Create a portrait in the style of @vangogh",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Create a portrait in the style of @vangogh. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 150,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_02_Uploaded",
+        "description": "New image with uploaded reference",
+        "prompt": "Generate an image inspired by this style",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 1
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Generate an image inspired by this style. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 148,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_IMAGE_REF_03_Multiple",
+        "description": "New image with multiple uploaded references - should route to Runway",
+        "prompt": "Combine the styles from these references",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 2
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Combine the styles from these references. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 154,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_01_Basic",
+        "description": "Basic image editing",
+        "prompt": "Make the sky more vibrant",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Make the sky more vibrant. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 142,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_02_Color",
+        "description": "Color adjustment editing",
+        "prompt": "Change the color scheme to warmer tones",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Change the color scheme to warmer tones. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 150,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_03_Object",
+        "description": "Object removal editing",
+        "prompt": "Remove the person from the background",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Remove the person from the background"
+        },
+        "result": {
+          "passed": false,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 164,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_04_Improve",
+        "description": "Vague improvement prompt",
+        "prompt": "Improve this image",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Improve this image. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 149,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_01_Hair",
+        "description": "Hair style transfer with named reference",
+        "prompt": "Change the hair to match @blonde_hair",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Change the hair to match @blonde_hair"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 169,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_02_Clothing",
+        "description": "Clothing transfer with uploaded reference",
+        "prompt": "Put the dress from the uploaded image on the person",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": true,
+          "referenced_image": false,
+          "reference_count": 1
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Put the dress from the uploaded image on the person"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 141,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_IMAGE_REF_03_Multiple",
+        "description": "Multiple aspect editing - should use Runway for 2+ refs",
+        "prompt": "Change the hair and clothing using these references",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": true,
+          "referenced_image": true,
+          "reference_count": 3
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Change the hair and clothing using these references"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 156,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_01_Basic",
+        "description": "Basic text-to-video generation",
+        "prompt": "Create a video of a cat walking in a garden",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Create a video of a cat walking in a garden"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 156,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_02_Action",
+        "description": "Action sequence video generation",
+        "prompt": "Generate a video of cars racing on a track",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "NEW_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Generate a video of cars racing on a track"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 148,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_AUDIO_01_Singing",
+        "description": "Text-to-video with singing audio",
+        "prompt": "Create a video of a person singing a happy song",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3"
+        },
+        "actual": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3",
+          "enhanced_prompt": "Scene: Create a video of a person singing a happy song. Visual style: cinematic and realistic. Camera movement: smooth and steady. Lighting: natural and well-balanced. Duration: 5-10 seconds."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 152,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "NEW_VIDEO_AUDIO_02_Music",
+        "description": "Text-to-video with background music",
+        "prompt": "Generate a video with background music of nature sounds",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "NEW_VIDEO_WITH_AUDIO",
+          "model": "google/veo-3"
+        },
+        "actual": {
+          "type": "NEW_IMAGE",
+          "model": "black-forest-labs/flux-1.1-pro",
+          "enhanced_prompt": "Generate a video with background music of nature sounds"
+        },
+        "result": {
+          "passed": false,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 157,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_TO_VIDEO_01_Basic",
+        "description": "Basic image-to-video animation",
+        "prompt": "Animate this image to show gentle movement",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Animate this image to show gentle movement"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 155,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_TO_VIDEO_02_Specific",
+        "description": "Specific animation of image elements",
+        "prompt": "Make the water in this image flow naturally",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Make the water in this image flow naturally. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": false,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 147,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_VIDEO_AUDIO_01_Singing",
+        "description": "Image-to-video with singing audio",
+        "prompt": "Animate this person singing a melody",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Animate this person singing a melody"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 183,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "IMAGE_VIDEO_AUDIO_02_Nature",
+        "description": "Image-to-video with nature sounds",
+        "prompt": "Add sound to this nature scene",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO_WITH_AUDIO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Add sound to this nature scene. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": false,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 158,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_REF_VIDEO_01_Style",
+        "description": "Video generation with multiple style references",
+        "prompt": "Create a video combining elements from @style1 and @style2",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Create a video combining elements from @style1 and @style2. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": false,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 147,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "EDIT_REF_VIDEO_02_Transform",
+        "description": "Working image animated with reference style",
+        "prompt": "Transform this image into a video with @style reference",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE_REF_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Transform this image into a video with @style reference"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 146,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_01_Ambiguous_Edit",
+        "description": "Ambiguous edit prompt - should be classified as edit",
+        "prompt": "Make this better",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max"
+        },
+        "actual": {
+          "type": "EDIT_IMAGE",
+          "model": "black-forest-labs/flux-kontext-max",
+          "enhanced_prompt": "Make this better. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 149,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_02_Video_Motion",
+        "description": "Image animation request",
+        "prompt": "Make this image move gently",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": true,
+          "uploaded_image": false,
+          "referenced_image": false,
+          "reference_count": 0
+        },
+        "expected": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01"
+        },
+        "actual": {
+          "type": "IMAGE_TO_VIDEO",
+          "model": "minimax/video-01",
+          "enhanced_prompt": "Make this image move gently"
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 144,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      },
+      {
+        "scenario_name": "COMPLEX_03_Multiple_Refs",
+        "description": "Multiple named references should route to Runway",
+        "prompt": "Create an image using @style1 and @style2 references",
+        "classification_method": "fallback",
+        "flags": {
+          "active_image": false,
+          "uploaded_image": false,
+          "referenced_image": true,
+          "reference_count": 2
+        },
+        "expected": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image"
+        },
+        "actual": {
+          "type": "NEW_IMAGE_REF",
+          "model": "runway_gen4_image",
+          "enhanced_prompt": "Create an image using @style1 and @style2 references. Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
+        },
+        "result": {
+          "passed": true,
+          "reasoning": "Fallback classification (Circuit breaker 'replicate_claude' is OPEN. Retry in 60.0s) based on CSV rules",
+          "processing_time_ms": 155,
+          "circuit_breaker_state": "open",
+          "cache_hit": false,
+          "error": null
+        }
+      }
+    ]
+  }
+}

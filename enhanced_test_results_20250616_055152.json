@@ -1,0 +1,21 @@
+{
+  "test_summary": {
+    "total_scenarios": 26,
+    "execution_time": "0:00:00.000067",
+    "test_mode": "llm",
+    "api_key_available": false
+  },
+  "llm_results": {
+    "message": "No LLM tests were run"
+  },
+  "fallback_results": {
+    "message": "No Fallback tests were run"
+  },
+  "comparison": {
+    "message": "Cannot compare - missing results from one or both methods"
+  },
+  "detailed_results": {
+    "llm_tests": [],
+    "fallback_tests": []
+  }
+}

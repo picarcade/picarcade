@@ -9,13 +9,18 @@ from dotenv import load_dotenv
 # Load environment variables first
 load_dotenv()
 
-# Debug print for environment variable and settings
-print("REPLICATE_API_TOKEN in backend env:", os.environ.get("REPLICATE_API_TOKEN"))
-print("settings.replicate_api_token:", settings.replicate_api_token)
-print("OPENAI_API_KEY loaded:", "Yes" if os.getenv("OPENAI_API_KEY") else "No")
+# Environment validation (production-safe)
+import logging
+logger = logging.getLogger(__name__)
+logger.info("API keys loaded: %s", 
+    {
+        "replicate": bool(settings.replicate_api_token),
+        "openai": bool(os.getenv("OPENAI_API_KEY"))
+    }
+)
 
 # Import API routes after environment is loaded
-from app.api.v1 import generation, uploads, references, auth, enhanced_generation
+from app.api.v1 import generation, uploads, references, auth
 from app.api.simplified_endpoints import router as simplified_router
 
 app = FastAPI(
@@ -69,10 +74,6 @@ app.include_router(
     tags=["references"]
 )
 
-app.include_router(
-    enhanced_generation.router,
-    tags=["enhanced-generation"]
-)
 
 app.include_router(
     simplified_router,

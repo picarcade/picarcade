@@ -1,0 +1,26 @@
+
+=== ENHANCED COMPREHENSIVE FLOW VALIDATION REPORT ===
+Generated: 2025-06-16 05:47:01
+
+TEST CONFIGURATION:
+------------------
+Total Scenarios: 26
+Test Mode: fallback
+API Key Available: False
+Execution Time: 0:00:04.510225
+
+FALLBACK CLASSIFICATION RESULTS:
+--------------------------------
+Tests Run: 26
+Passed: 21
+Failed: 5
+Success Rate: 80.8%
+Average Processing Time: 134.4ms
+
+Fallback Type Classification Errors:
+  EDIT_IMAGE → IMAGE_TO_VIDEO: 1 cases
+  NEW_VIDEO_WITH_AUDIO → NEW_IMAGE: 1 cases
+  IMAGE_TO_VIDEO → EDIT_IMAGE: 1 cases
+  IMAGE_TO_VIDEO_WITH_AUDIO → EDIT_IMAGE: 1 cases
+  EDIT_IMAGE_REF_TO_VIDEO → NEW_IMAGE_REF: 1 cases
+
