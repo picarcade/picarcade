@@ -38,6 +38,7 @@ class PromptType(Enum):
     NEW_IMAGE_REF = "NEW_IMAGE_REF"
     EDIT_IMAGE = "EDIT_IMAGE" 
     EDIT_IMAGE_REF = "EDIT_IMAGE_REF"
+    EDIT_IMAGE_ADD_NEW = "EDIT_IMAGE_ADD_NEW"  # New: Adding elements to scenes (Replicate)
     # New video generation flows from CSV
     NEW_VIDEO = "NEW_VIDEO"
     NEW_VIDEO_WITH_AUDIO = "NEW_VIDEO_WITH_AUDIO"  # New: Text-to-video with audio (Veo 3) - no working image
@@ -362,7 +363,13 @@ Check if the user wants VIDEO generation (not image). Video keywords include:
 IF VIDEO INTENT DETECTED:
 CRITICAL: Veo 3 is ONLY used for pure text-to-video with audio when NO working image exists!
 
-First check for AUDIO INTENT (singing, song, music, audio, sound, voice, speak, talk, lyrics, melody, vocal, etc.):
+First check for AUDIO INTENT - Audio is required for:
+A) EXPLICIT AUDIO: singing, song, music, audio, sound, voice, speak, talk, lyrics, melody, vocal, narration, dialogue, conversation
+B) CONVERSATIONAL SCENARIOS: interview, interviewing, reporter, news report, press conference, Q&A, asking questions, discussion, debate, meeting, presentation, lecture, speech, announcement
+C) INTERACTIVE CONTENT: characters talking to each other, people having conversations, phone calls, video calls, broadcasting, podcasting, storytelling
+
+CRITICAL: If the video involves people communicating, conversing, or any scenario where dialogue/speech is the main content, it REQUIRES AUDIO even if not explicitly mentioned.
+
 1. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: NEW_VIDEO_WITH_AUDIO, Model: Veo 3 (text-to-video with audio)
 2. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: NEW_VIDEO, Model: MiniMax (text-to-video)
 3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: MiniMax (image-to-video with audio)
@@ -375,15 +382,35 @@ IMAGE CLASSIFICATION RULES (if NO video intent):
 2. If Active Image=YES, Uploaded Image=NO, Referenced Image=NO → Type: NEW_IMAGE, Model: Flux 1.1 Pro (no edit intent) or EDIT_IMAGE, Model: Kontext (edit intent)
 3. If Active Image=NO, Uploaded Image=NO, Referenced Image=YES → Type: NEW_IMAGE_REF, Model: Runway
 4. If Active Image=NO, Uploaded Image=YES, Referenced Image=NO → Type: NEW_IMAGE_REF, Model: Runway
-5. If Active Image=YES, Uploaded Image=YES, Referenced Image=NO → Type: EDIT_IMAGE_REF, Model: Runway
-6. If Active Image=YES, Uploaded Image=NO, Referenced Image=YES → Type: EDIT_IMAGE_REF, Model: Runway  
-7. If Active Image=YES, Uploaded Image=YES, Referenced Image=YES → Type: EDIT_IMAGE_REF, Model: Runway
+5. If Active Image=YES, Uploaded Image=YES, Referenced Image=NO → Type: EDIT_IMAGE_REF or EDIT_IMAGE_ADD_NEW, Model: Runway or Replicate
+6. If Active Image=YES, Uploaded Image=NO, Referenced Image=YES → Type: EDIT_IMAGE_REF or EDIT_IMAGE_ADD_NEW, Model: Runway or Replicate  
+7. If Active Image=YES, Uploaded Image=YES, Referenced Image=YES → Type: EDIT_IMAGE_REF or EDIT_IMAGE_ADD_NEW, Model: Runway or Replicate
 
-CRITICAL: When both Active Image=TRUE AND (Uploaded Image=TRUE OR Referenced Image=TRUE), it is ALWAYS EDIT_IMAGE_REF (or EDIT_IMAGE_REF_TO_VIDEO if video intent), regardless of edit keywords!
+CRITICAL NEW DISTINCTION FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
+When both Active Image=TRUE AND (Uploaded Image=TRUE OR Referenced Image=TRUE), analyze the intent:
+
+EDIT_IMAGE_REF (Use Runway) - Face/Hair/Dress Transfers:
+- Face swapping/replacement: "replace face", "swap face", "change face to"
+- Hair styling/transfer: "change hair", "hair style", "hairstyle from", "hair like"
+- Clothing/dress transfer: "wear this", "put on", "dress in", "outfit from", "clothing from"
+- Pose/position changes: "turn to face", "look like this", "same pose as"
+- Style transfers from person to person: "make them look like", "style like this person"
+- Key indicators: transferring specific features/attributes FROM one person TO another
+
+EDIT_IMAGE_ADD_NEW (Use Replicate) - Adding New Elements:
+- Adding people to scenes: "add person", "put woman next to", "place person in"
+- Adding objects to environments: "add car to street", "put tree in background"
+- Placing elements in new contexts: "put the woman next to the house"
+- Combining separate elements: "merge these images", "combine person and scene"
+- Environmental additions: "add mountains", "place building", "insert animal"
+- Key indicators: adding NEW elements to scenes where they don't already exist
+- Enhancement should maintain the photographic style and composition of the original image
+
+CRITICAL: When both Active Image=TRUE AND (Uploaded Image=TRUE OR Referenced Image=TRUE), it is ALWAYS one of these reference types, but you must distinguish which one!
 
 SPECIFIC EXAMPLE:
-- If active_image=True, uploaded_image=True, referenced_image=False → ALWAYS classify as EDIT_IMAGE_REF
-- User prompt: "Update hair style to this" with these flags → Type: EDIT_IMAGE_REF
+- "Change hair to @blonde" with working image → EDIT_IMAGE_REF (hair transfer)
+- "Put the woman next to the house" with working image → EDIT_IMAGE_ADD_NEW (adding to scene)
 
 EDIT INTENT KEYWORDS:
 - "edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it", "convert it", "transform it"
@@ -421,28 +448,43 @@ IMAGE ENHANCEMENT RULES:
    - REWRITE the prompt using SIMPLE, DIRECT language: "Add [CHANGE] from @[SOURCE] to @[TARGET]"
    - For EDIT_IMAGE_REF: TARGET = working image (the subject being edited), SOURCE = @reference from prompt
    - Keep prompts short and clear - Runway works better with simple instructions
+   - For face replacement: Use format "@working_image with only the face changed to match @[source]'s face exactly. Keep everything else identical: same body, pose, clothing, background, lighting, and style" rather than "replace face"
    - Examples:
      * "Update the hair to @blonde" (with working image) → "@working_image with the hairstyle from @blonde. Maintain all other features. Only update the hair style."
      * "Change hair to desired style" (with working image + uploaded hair image) → "@working_image with the hairstyle from @reference_1. Maintain all other features. Only update the hair style."
      * "Put @dress on person" (with working image) → "Add clothing from @dress to @working_image"
      * "Change outfit" (with working image + uploaded clothing image) → "Add clothing from @reference_1 to @working_image"
+     * "Update face to @finley" (with working image) → "@working_image with only the face changed to match @finley's face exactly. Keep everything else identical: same body, pose, clothing, background, lighting, and style."
+     * "Replace face with @person" (with working image) → "@working_image with only the face changed to match @person's face exactly. Keep everything else identical: same body, pose, clothing, background, lighting, and style."
+
+5. EDIT_IMAGE_ADD_NEW:
+   - For adding new elements to scenes, use descriptive language that clearly explains placement
+   - Focus on spatial relationships and natural integration
+   - ALWAYS include both @reference and @working_image tags explicitly in the enhanced prompt
+   - Examples:
+     * "Put the woman next to the house" → "Place the woman from @reference_1 next to the house in @working_image, ensuring natural lighting and perspective"
+     * "Add person to background" → "Add the person from @reference_1 to the background of @working_image, maintaining consistent lighting and scale"
+     * "Add @finley skating with cheetah" → "Place @finley skating alongside the cheetah in @working_image, ensuring natural integration"
 
 Based on the CSV decision matrix - APPLY THESE RULES IN ORDER:
-1. If active_image=True AND (uploaded_image=True OR referenced_image=True): prompt_type="EDIT_IMAGE_REF" 
+1. If active_image=True AND (uploaded_image=True OR referenced_image=True): Determine if EDIT_IMAGE_REF (transfers) or EDIT_IMAGE_ADD_NEW (adding referenced elements)
 2. If no images (all False): prompt_type="NEW_IMAGE"
-3. If only uploaded_image=True OR only referenced_image=True: prompt_type="NEW_IMAGE_REF"
-4. If only active_image=True: determine if user wants to edit (prompt_type="EDIT_IMAGE") or create new (prompt_type="NEW_IMAGE")
+3. If only uploaded_image=True OR only referenced_image=True: prompt_type="NEW_IMAGE_REF"  
+4. If only active_image=True: prompt_type="EDIT_IMAGE" (basic image editing without references)
 
 For prompt enhancement:
 - NEW_IMAGE: Return original prompt unchanged
 - NEW_IMAGE_REF: Make minor clarity improvements and add "Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
 - EDIT_IMAGE: Make minor clarity improvements and add "Maintain all other aspects of the original image."
 - EDIT_IMAGE_REF: COMPLETELY REWRITE the prompt following the structured format - do not just enhance the original!
+- EDIT_IMAGE_ADD_NEW: Focus on placing/adding new elements to scenes with clear spatial instructions, natural integration, and maintaining the photographic style and composition of the original image. ALWAYS explicitly include both @reference and @working_image tags in the enhanced prompt
 
 **CRITICAL FOR EDIT_IMAGE_REF: You must identify the TARGET and SOURCE from context and rewrite the prompt completely. Never just append or enhance - always restructure to the SIMPLE format: "Add [CHANGE] from @[SOURCE] to @[TARGET]"**
 
+**CRITICAL FOR EDIT_IMAGE_ADD_NEW: Focus on placing/adding new elements to scenes with clear spatial instructions, natural integration, and maintaining the photographic style and composition of the original image. ALWAYS explicitly include both @reference and @working_image tags in the enhanced prompt.**
+
 Return your analysis as JSON:
-{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
+{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|EDIT_IMAGE_ADD_NEW|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
 
 USER PROMPT TO ANALYZE: "{user_prompt}"
 
@@ -451,32 +493,68 @@ REFERENCE TAG RULES:
 - uploaded_image=True: First uploaded image becomes @reference_1, second becomes @reference_2, etc.
 - referenced_image=True: Named references in prompt keep their original names (e.g., @blonde, @dress)
 
-CONTEXT FOR EDIT_IMAGE_REF:
+CONTEXT FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
 - When active_image=True, there is a WORKING IMAGE that is the main subject being edited (this becomes @working_image)
 - When referenced_image=True, there are @reference images mentioned in the prompt that provide styles/features to copy
 - When uploaded_image=True, there are uploaded images that should be referenced as @reference_1, @reference_2, etc.
+
+**CRITICAL DISTINCTION:**
+- EDIT_IMAGE_REF: TRANSFERRING features/styles FROM one subject TO another (face swaps, hair styling, clothing changes)
+  - Examples: "Change hair to @blonde", "Put on @dress", "Replace face with @person", "Style like @celebrity"
+  - The @reference provides a FEATURE/STYLE to transfer
+  - The @working_image is the TARGET that receives the feature/style
+
+- EDIT_IMAGE_ADD_NEW: ADDING/PLACING REFERENCED people/objects INTO a scene (REQUIRES referenced_image=True OR uploaded_image=True)
+  - Examples: "Add @person to the scene", "Put @finley walking with tiger", "Place @woman next to house"
+  - The @reference is a COMPLETE ELEMENT to add to the scene
+  - The @working_image is the SCENE/ENVIRONMENT to add to
+  - **CRITICAL: ONLY use EDIT_IMAGE_ADD_NEW when you have actual reference images to add. If no references, use EDIT_IMAGE instead.**
+
+**KEY INDICATORS FOR EDIT_IMAGE_ADD_NEW:**
+- Phrases like "Add @person", "Put @name", "Place @character" (WITH actual @references)
+- Actions involving the referenced person: "walking", "sitting", "standing", "playing"
+- Spatial relationships: "next to", "in front of", "behind", "with"
+- Scene integration: "to the scene", "in the background", "in the image"
+- **WARNING: Do NOT use EDIT_IMAGE_ADD_NEW for generic "add a bear", "add a car" etc. without actual reference images. These are EDIT_IMAGE.**
+
+**KEY INDICATORS FOR EDIT_IMAGE_REF:**
+- Style/feature transfers: "hair like", "dress like", "face from", "style of"
+- Clothing changes: "wear this", "put on", "in this outfit"
+- Appearance modifications: "make look like", "change to look like"
+- Face replacement: "update face", "replace face", "change face", "face to", "face swap", "look like @person"
+
 - For EDIT_IMAGE_REF: The WORKING IMAGE is the TARGET (what gets edited), @references are the SOURCE (what to copy from)
-- Example: "Update hair to @blonde" with working image = TARGET is @working_image, SOURCE is @blonde reference
+- For EDIT_IMAGE_ADD_NEW: The WORKING IMAGE is the scene/environment, @references are elements to ADD to the scene
+- For EDIT_IMAGE: The WORKING IMAGE is edited/modified without external references
+- Example: "Update hair to @blonde" with working image = TARGET is @working_image, SOURCE is @blonde reference (EDIT_IMAGE_REF)
+- Example: "Put the woman next to the house" with working image + uploaded woman image = SCENE is @working_image, ELEMENT TO ADD is @reference_1 (EDIT_IMAGE_ADD_NEW)  
+- Example: "Add @finley walking the cheetah" with @finley reference = SCENE is @working_image, ELEMENT TO ADD is @finley (EDIT_IMAGE_ADD_NEW)
+- Example: "Make him riding a bear" with only working image = basic image editing (EDIT_IMAGE)
 - CRITICAL: For uploaded images (not named references), always use @reference_1, @reference_2, etc. - NEVER use generic @reference
-- NEVER use the @reference as both TARGET and SOURCE - always use @working_image as TARGET
+- NEVER use the @reference as both TARGET and SOURCE - always use @working_image as TARGET for EDIT_IMAGE_REF or as SCENE for EDIT_IMAGE_ADD_NEW
 
 TASK:
 1. Classify the intent type based on the rules above
 2. Enhance the prompt according to the enhancement rules
 3. For EDIT_IMAGE_REF: Carefully analyze which @reference is the TARGET (subject being changed) vs SOURCE (providing the style/feature)
-4. Provide reasoning for your classification and enhancement decisions
+4. For EDIT_IMAGE_ADD_NEW: Focus on spatial placement and natural integration of new elements  
+5. **CRITICAL: If only active_image=True (no uploads/references), ALWAYS use EDIT_IMAGE for any editing request, even if it mentions "adding" things**
+6. Provide reasoning for your classification and enhancement decisions
 
-IMPORTANT FOR EDIT_IMAGE_REF:
-- Always identify the main subject (TARGET) that is being edited
-- Clearly specify what aspect is being changed (hair, clothing, pose, etc.)
-- Structure the enhanced prompt to be unambiguous about what changes and what stays the same
-- Use the SIMPLE format: "Add [aspect] from @[source] to @[target]"
+IMPORTANT FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
+- EDIT_IMAGE_REF: Always identify the main subject (TARGET) that is being edited
+- EDIT_IMAGE_REF: Clearly specify what aspect is being changed (hair, clothing, pose, etc.)
+- EDIT_IMAGE_REF: Structure the enhanced prompt to be unambiguous about what changes and what stays the same
+- EDIT_IMAGE_REF: Use the SIMPLE format: "Add [aspect] from @[source] to @[target]"
+- EDIT_IMAGE_REF: For face replacement, use format "@working_image with only the face changed to match @[source]'s face exactly. Keep everything else identical: same body, pose, clothing, background, lighting, and style"
+- EDIT_IMAGE_ADD_NEW: Focus on adding new elements to scenes with clear spatial instructions while maintaining the photographic style and composition of the original image. ALWAYS explicitly include both @reference and @working_image tags in the enhanced prompt
+- EDIT_IMAGE_ADD_NEW: Use descriptive language for placement: "Place @[element] [spatial relationship] in @working_image"
 - CRITICAL: If uploaded_image=True, use @reference_1 for the first uploaded image, @reference_2 for second, etc.
 - NEVER use generic @reference - always use the specific numbered reference tags
 
 Respond with ONLY valid JSON and no additional text:
 {{
-    "type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO",
+    "type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|EDIT_IMAGE_ADD_NEW|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO",
     "enhanced_prompt": "enhanced version of user prompt following CSV rules",
     "reasoning": "brief explanation of classification and enhancement decisions"
 }}
@@ -527,7 +605,8 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             
             result = json.loads(result_text)
             
-            llm_type = result.get("type", "NEW_IMAGE")
+            # Handle both "type" and "prompt_type" field names for compatibility
+            llm_type = result.get("type") or result.get("prompt_type", "NEW_IMAGE")
             enhanced_prompt = result.get("enhanced_prompt", user_prompt)
             reasoning = result.get("reasoning", "LLM classification completed")
             
@@ -536,7 +615,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             
             # Only override LLM if it makes an obviously invalid classification
             # (For now, trust the LLM - we can add specific validation rules later if needed)
-            valid_types = ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF", 
+            valid_types = ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW", 
                           "NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]
             
             if llm_type not in valid_types:
@@ -633,7 +712,9 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     audio_keywords = model_config.get_audio_keywords()
                 except Exception as e:
                     logger.warning(f"Error loading audio keywords: {e}, using defaults")
-                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice"]
+                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                     "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                     "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
                 has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
                 
                 if has_audio_intent:
@@ -649,7 +730,9 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     audio_keywords = model_config.get_audio_keywords()
                 except Exception as e:
                     logger.warning(f"Error loading audio keywords: {e}, using defaults")
-                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice"]
+                    audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                     "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                     "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
                 has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
                 
                 if has_audio_intent:
@@ -662,42 +745,45 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         
         # Image flow fallback logic (existing)
         if not active_image and not uploaded_image and not referenced_image:
-            return ("NEW_IMAGE", user_prompt, "Fallback: No images detected")
-        
-        # New scenarios: NEW_IMAGE_REF for creating new images with references/uploads but no active image
-        if not active_image and (uploaded_image or referenced_image):
+            prompt_type = "NEW_IMAGE"
+            enhanced_prompt = user_prompt
+        elif not active_image and (uploaded_image or referenced_image):
+            prompt_type = "NEW_IMAGE_REF"
             enhanced_prompt = user_prompt + ". Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
-            return ("NEW_IMAGE_REF", enhanced_prompt, "Fallback: New image with references/uploads")
+        elif active_image and not uploaded_image and not referenced_image:
+            # Only working image - this is always EDIT_IMAGE (basic image editing)
+            prompt_type = "EDIT_IMAGE"
+            enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
+        else:
+            # active_image + (uploaded_image or referenced_image)
+            # Check for ADD_NEW vs REF scenarios
+            add_keywords = ["add", "place", "put", "include", "insert", "bring", "introduce"]
+            has_add_intent = any(keyword in user_prompt.lower() for keyword in add_keywords)
             
-        # Check for edit keywords when active image is present
-        try:
-            edit_keywords = model_config.get_edit_keywords()
-        except Exception as e:
-            logger.warning(f"Error loading edit keywords: {e}, using defaults")
-            edit_keywords = ["edit", "change", "modify", "adjust", "improve", "enhance", "fix", "update"]
-        has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
-        
-        if active_image and not uploaded_image and not referenced_image:
-            if has_edit_intent:
-                enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
-                return ("EDIT_IMAGE", enhanced_prompt, "Fallback: Edit intent detected")
+            if has_add_intent:
+                # Adding new elements to existing scene
+                prompt_type = "EDIT_IMAGE_ADD_NEW"
+                enhanced_prompt = user_prompt
             else:
-                return ("NEW_IMAGE", user_prompt, "Fallback: New image intent")
+                # Transferring features/styles between images
+                prompt_type = "EDIT_IMAGE_REF"
+                enhanced_prompt = user_prompt
         
-        # Any reference images with active image = reference editing
-        if active_image and (uploaded_image or referenced_image):
-            # Use simple structured rewriting for EDIT_IMAGE_REF fallback
-            if "hair" in user_prompt.lower():
-                enhanced_prompt = f"@working_image with the hairstyle from @reference_1. Maintain all other features. Only update the hair style."
-            elif "clothing" in user_prompt.lower() or "dress" in user_prompt.lower() or "wear" in user_prompt.lower() or "outfit" in user_prompt.lower():
-                enhanced_prompt = f"Add clothing from @reference_1 to @working_image"
-            elif "face" in user_prompt.lower():
-                enhanced_prompt = f"Add face from @reference_1 to @working_image"
-            else:
-                enhanced_prompt = f"Add style from @reference_1 to @working_image"
-            return ("EDIT_IMAGE_REF", enhanced_prompt, "Fallback: Reference editing with active image")
+        # Get model for type
+        model_to_use = self._get_model_for_type(prompt_type, 0)
         
-        return ("NEW_IMAGE", user_prompt, "Fallback: Default to new image")
+        return SimplifiedFlowResult(
+            prompt_type=PromptType(prompt_type),
+            enhanced_prompt=enhanced_prompt,
+            model_to_use=model_to_use,
+            original_prompt=user_prompt,
+            reasoning=f"Fallback classification ({reasoning}) based on CSV rules",
+            active_image=active_image,
+            uploaded_image=uploaded_image,
+            referenced_image=referenced_image,
+            cache_hit=False,
+            processing_time_ms=0
+        )
     
     def _enhance_veo3_prompt_fallback(self, user_prompt: str) -> str:
         """
@@ -767,7 +853,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         if not active_image and not uploaded_image and not referenced_image:
             return "NEW_IMAGE"
         if active_image and not uploaded_image and not referenced_image:
-            return "EDIT_IMAGE"  # Default to edit for active image alone
+            return "EDIT_IMAGE"  # Basic image editing with only working image
         if not active_image and not uploaded_image and referenced_image:
             return "NEW_IMAGE_REF"
         if not active_image and uploaded_image and not referenced_image:
@@ -775,9 +861,9 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         if active_image and uploaded_image and not referenced_image:
             return "EDIT_IMAGE_REF"
         if active_image and not uploaded_image and referenced_image:
-            return "EDIT_IMAGE_REF"  # This should be our case!
+            return "EDIT_IMAGE_REF"  # Could be EDIT_IMAGE_ADD_NEW but default to REF for fallback
         if active_image and uploaded_image and referenced_image:
-            return "EDIT_IMAGE_REF"
+            return "EDIT_IMAGE_REF"  # Could be EDIT_IMAGE_ADD_NEW but default to REF for fallback
         
         return "NEW_IMAGE"  # Default fallback
     
@@ -808,10 +894,11 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "NEW_IMAGE_REF": "runway_gen4_image",
                 "EDIT_IMAGE": "black-forest-labs/flux-kontext-max", 
                 "EDIT_IMAGE_REF": "runway_gen4_image",
+                "EDIT_IMAGE_ADD_NEW": "runway_gen4_image",
                 "NEW_VIDEO": "minimax/video-01",
                 "NEW_VIDEO_WITH_AUDIO": "google/veo-3",
                 "IMAGE_TO_VIDEO": "minimax/video-01",
-                "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",
+                "IMAGE_TO_VIDEO_WITH_AUDIO": "google/veo-3",
                 "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"
             }
             return fallback_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
@@ -863,6 +950,51 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "num_inference_steps": 28,
                 "safety_tolerance": 2
             })
+        elif result.model_to_use == "flux-kontext-apps/multi-image-kontext-max":
+            # For EDIT_IMAGE_ADD_NEW flow with multi-image-kontext-max
+            base_params.update({
+                "guidance_scale": 7.5,
+                "num_inference_steps": 20,
+                "output_format": "png",
+                "aspect_ratio": "16:9",
+                "safety_tolerance": 2
+            })
+            
+            # Add reference images for EDIT_IMAGE_ADD_NEW
+            if context and result.prompt_type.value == "EDIT_IMAGE_ADD_NEW":
+                reference_images = []
+                
+                print(f"[DEBUG] SIMPLIFIED: Setting up reference images for EDIT_IMAGE_ADD_NEW")
+                print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
+                
+                # Get reference images from context
+                if "reference_images" in context:
+                    print(f"[DEBUG] SIMPLIFIED: Found {len(context['reference_images'])} reference images in context")
+                    for ref_image in context["reference_images"]:
+                        if isinstance(ref_image, dict) and "url" in ref_image and "tag" in ref_image:
+                            reference_images.append({
+                                "url": ref_image["url"],
+                                "uri": ref_image["url"],  # Both formats for compatibility
+                                "tag": ref_image["tag"]
+                            })
+                            print(f"[DEBUG] SIMPLIFIED: Added reference: @{ref_image['tag']} -> {ref_image['url']}")
+                
+                # Add uploaded images as references
+                if "uploaded_images" in context and context["uploaded_images"]:
+                    print(f"[DEBUG] SIMPLIFIED: Found {len(context['uploaded_images'])} uploaded images in context")
+                    for i, uploaded_url in enumerate(context["uploaded_images"]):
+                        reference_images.append({
+                            "url": uploaded_url,
+                            "uri": uploaded_url,  # Both formats for compatibility
+                            "tag": f"reference_{i+1}"
+                        })
+                        print(f"[DEBUG] SIMPLIFIED: Added uploaded reference: reference_{i+1} -> {uploaded_url}")
+                
+                if reference_images:
+                    base_params["reference_images"] = reference_images
+                    print(f"[DEBUG] SIMPLIFIED: Added {len(reference_images)} reference images for multi-image-kontext-max")
+                else:
+                    print(f"[DEBUG] SIMPLIFIED: No reference images found for EDIT_IMAGE_ADD_NEW")
         elif result.model_to_use == "runway_gen4_image":
             print(f"[DEBUG] SIMPLIFIED: Setting up Runway parameters for {result.prompt_type.value}")
             print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
@@ -879,7 +1011,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             print(f"[DEBUG] SIMPLIFIED: Base Runway params: {base_params}")
             
             # Add reference images if they exist in context
-            if context and result.prompt_type.value in ["NEW_IMAGE_REF", "EDIT_IMAGE_REF"]:
+            if context and result.prompt_type.value in ["NEW_IMAGE_REF", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW"]:
                 # Set type to route to correct generator path
                 base_params["type"] = "text_to_image_with_references"
                 print(f"[DEBUG] SIMPLIFIED: Set type=text_to_image_with_references for reference flow")
@@ -910,20 +1042,25 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                         print(f"[DEBUG] SIMPLIFIED: Added uploaded reference: reference_{i+1} -> {uploaded_url}")
                 
                 if reference_images:
+                    # For all Runway flows, use camelCase
                     base_params["referenceImages"] = reference_images
                     print(f"[DEBUG] SIMPLIFIED: Final Runway params with {len(reference_images)} reference images: {base_params}")
                 else:
-                    print(f"[DEBUG] SIMPLIFIED: No reference images found - Runway will generate without references")
-            else:
-                print(f"[DEBUG] SIMPLIFIED: Not a reference flow or no context - skipping reference image setup")
+                    print(f"[DEBUG] SIMPLIFIED: No reference images found - generator will work without references")
         # Video model parameters
-        elif result.model_to_use == "google/veo-3":
-            # Veo 3 only supports text-to-video with audio (no working image)
+        elif result.model_to_use == "veo-3.0-generate-preview":
+            # VEO3 supports text-to-video and image-to-video with native audio generation
             base_params.update({
-                "duration": 10,  # 10 seconds max for Veo 3
-                "quality": "high",
-                "prompt_optimizer": True
+                "duration_seconds": 8,  # 8 seconds for VEO3
+                "fps": 24,
+                "enhance_prompt": True,
+                "generate_audio": True  # VEO3 native audio generation
             })
+            
+            # Add image input for image-to-video scenarios
+            if result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+                # These will be populated with actual image URLs by the API layer
+                base_params["requires_image_input"] = True
         elif result.model_to_use == "minimax/video-01":
             # MiniMax supports all video scenarios (text-to-video and image-to-video)
             base_params.update({
@@ -1027,8 +1164,18 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     enhanced_prompt = user_prompt
             else:
                 # active_image + (uploaded_image or referenced_image)
-                prompt_type = "EDIT_IMAGE_REF"
-                enhanced_prompt = user_prompt
+                # Check for ADD_NEW vs REF scenarios
+                add_keywords = ["add", "place", "put", "include", "insert", "bring", "introduce"]
+                has_add_intent = any(keyword in user_prompt.lower() for keyword in add_keywords)
+                
+                if has_add_intent:
+                    # Adding new elements to existing scene
+                    prompt_type = "EDIT_IMAGE_ADD_NEW"
+                    enhanced_prompt = user_prompt
+                else:
+                    # Transferring features/styles between images
+                    prompt_type = "EDIT_IMAGE_REF"
+                    enhanced_prompt = user_prompt
         
         # Get model for type
         model_to_use = self._get_model_for_type(prompt_type, total_references)

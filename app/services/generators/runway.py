@@ -199,8 +199,7 @@ class RunwayGenerator(BaseGenerator):
                 "ratio": ratio
             }
         }
-        logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
-        logger.info(json.dumps(complete_api_request, indent=2))
+        logger.debug(f"🚀 Runway text_to_image call: {complete_api_request['sdk_method']}")
         
         try:
             task = self.client.text_to_image.create(
@@ -270,8 +269,7 @@ class RunwayGenerator(BaseGenerator):
                 "duration": duration
             }
         }
-        logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
-        logger.info(json.dumps(complete_api_request, indent=2))
+        logger.debug(f"🚀 Runway text_to_video call: {complete_api_request['sdk_method']}")
         
         try:
             task = self.client.text_to_video.create(
@@ -331,8 +329,24 @@ class RunwayGenerator(BaseGenerator):
         if not self.client:
             raise Exception("Runway API key not configured")
         
-        # Check for reference images in both camelCase (from simplified flow) and snake_case (legacy)
-        reference_images = parameters.get("referenceImages", parameters.get("reference_images", []))
+        # Check for reference images in both camelCase (from simplified flow) and snake_case (from generation.py)
+        # Merge both sources to ensure working image and other references are included
+        reference_images_camel = parameters.get("referenceImages", [])
+        reference_images_snake = parameters.get("reference_images", [])
+        
+        # Combine and deduplicate reference images
+        all_references = []
+        seen_uris = set()
+        
+        # Add from both sources, avoiding duplicates based on URI
+        for ref_list in [reference_images_camel, reference_images_snake]:
+            for ref in ref_list:
+                if ref["uri"] not in seen_uris:
+                    all_references.append(ref)
+                    seen_uris.add(ref["uri"])
+        
+        reference_images = all_references
+        
         print(f"📸 REFERENCE IMAGES COUNT: {len(reference_images)}")
         for i, ref in enumerate(reference_images):
             print(f"  📸 Reference {i+1}: tag='{ref['tag']}', uri='{ref['uri'][:100]}...'")
@@ -495,47 +509,14 @@ class RunwayGenerator(BaseGenerator):
         # Use camelCase parameters from simplified flow service
         prompt_text = parameters.get("promptText", prompt)
         ratio = parameters.get("ratio", "1920:1080")
-        reference_images_param = parameters.get("referenceImages", reference_images)
+        # Use the merged reference_images that contains both @finley AND working_image
+        reference_images_param = reference_images
         
-        # Log the complete, definitive SDK call (Python SDK uses snake_case, converts to camelCase internally)
-        complete_api_request = {
-            "sdk_method": "client.text_to_image.create",
-            "python_sdk_parameters": {
-                "model": "gen4_image",
-                "prompt_text": prompt_text,  # ✅ Python SDK snake_case
-                "ratio": ratio,
-                "reference_images": reference_images_param  # ✅ Python SDK snake_case
-            },
-            "converted_to_http_api": {
-                "model": "gen4_image",
-                "promptText": prompt_text,  # ✅ HTTP API camelCase
-                "ratio": ratio,
-                "referenceImages": reference_images_param  # ✅ HTTP API camelCase
-            },
-            "headers": {
-                "X-Runway-Version": "2024-11-06",
-                "Authorization": f"Bearer {settings.runway_api_key[:20]}...REDACTED",
-                "Content-Type": "application/json"
-            },
-            "endpoint": "https://api.dev.runwayml.com/v1/text_to_image"
-        }
+        # Log clean summary without image data
+        ref_summary = [{"tag": ref.get("tag", "unknown"), "uri_preview": ref.get("uri", "")[:50] + "..."} for ref in reference_images_param]
         
-        print("🚀 DEFINITIVE RUNWAY API REQUEST:")
-        print(json.dumps(complete_api_request, indent=2))
-        logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
-        logger.info(json.dumps(complete_api_request, indent=2))
-        
-        # Log raw HTTP request payload that will be sent to Runway (SDK converts snake_case to camelCase)
-        raw_request_payload = {
-            "model": "gen4_image",
-            "promptText": prompt_text,  # ✅ HTTP API camelCase (converted by SDK)
-            "ratio": ratio,
-            "referenceImages": reference_images_param  # ✅ HTTP API camelCase (converted by SDK)
-        }
-        print("📦 RAW REQUEST PAYLOAD TO RUNWAY:")
-        print(json.dumps(raw_request_payload, indent=2))
-        logger.info("📦 RAW REQUEST PAYLOAD TO RUNWAY:")
-        logger.info(json.dumps(raw_request_payload, indent=2))
+        logger.debug(f"🚀 Runway SDK call: text_to_image.create(model='gen4_image', prompt='{prompt_text}', ratio='{ratio}', reference_images={len(reference_images_param)})")
+        logger.debug(f"📋 Reference images: {ref_summary}")
         
         try:
             print(f"🌟 CALLING: self.client.text_to_image.create(model='gen4_image', prompt_text='{prompt_text}', ratio='{ratio}', reference_images={len(reference_images_param)} images)")
@@ -550,17 +531,8 @@ class RunwayGenerator(BaseGenerator):
             print(f"✅ RUNWAY TASK CREATED: {task_id}")
             logger.info(f"Runway reference task created: {task_id}")
             
-            # Log the complete task creation response
-            task_data = {
-                "id": task.id,
-                "status": getattr(task, 'status', 'Unknown'),
-                "created_at": getattr(task, 'created_at', 'Unknown'),
-                "model": getattr(task, 'model', 'Unknown')
-            }
-            print(f"📋 RUNWAY TASK CREATION RESPONSE:")
-            print(json.dumps(task_data, indent=2, default=str))
-            logger.info(f"📋 RUNWAY TASK CREATION RESPONSE:")
-            logger.info(json.dumps(task_data, indent=2, default=str))
+            # Log clean task creation summary
+            logger.info(f"📋 Task created: {task.id} (status: {getattr(task, 'status', 'pending')})")
             
             # Poll for completion
             max_attempts = 60
@@ -753,8 +725,7 @@ class RunwayGenerator(BaseGenerator):
                 "duration": duration
             }
         }
-        logger.info("🚀 DEFINITIVE RUNWAY API REQUEST:")
-        logger.info(json.dumps(complete_api_request, indent=2))
+        logger.debug(f"🚀 Runway image_to_video call: {complete_api_request['sdk_method']}")
         
         try:
             task = self.client.image_to_video.create(
@@ -871,8 +842,7 @@ class RunwayGenerator(BaseGenerator):
                     "referenceImages": reference_images  # ✅ Use camelCase
                 }
             }
-            logger.info("🚀 DEFINITIVE RUNWAY API REQUEST (FACE SWAP):")
-            logger.info(json.dumps(complete_api_request, indent=2))
+            logger.debug(f"🚀 Runway face_swap call: {complete_api_request['sdk_method']}")
             
             task = self.client.text_to_image.create(
                 model="gen4_image",

@@ -108,21 +108,45 @@ class ModelConfigManager:
             return self._get_default_model(prompt_type)
     
     def get_model_parameters(self, prompt_type: str, model: str) -> Dict[str, Any]:
-        """Get model-specific parameters"""
+        """Get model parameters for a specific prompt type and model"""
         try:
+            # Get base model mapping
             image_models = self.config.get("model_routing", {}).get("models", {}).get("image_generation", {})
             video_models = self.config.get("model_routing", {}).get("models", {}).get("video_generation", {})
             
             all_models = {**image_models, **video_models}
             
             if prompt_type in all_models:
-                return all_models[prompt_type].get("parameters", {})
+                model_config = all_models[prompt_type]
+                return model_config.get("parameters", {})
             
             return {}
             
         except Exception as e:
-            logger.error(f"Error getting parameters for {prompt_type}: {e}")
+            logger.error(f"Error getting model parameters for {prompt_type}: {e}")
             return {}
+    
+    def get_generator_for_type(self, prompt_type: str) -> str:
+        """Get the generator to use for a specific prompt type"""
+        try:
+            # Get base model mapping
+            image_models = self.config.get("model_routing", {}).get("models", {}).get("image_generation", {})
+            video_models = self.config.get("model_routing", {}).get("models", {}).get("video_generation", {})
+            
+            all_models = {**image_models, **video_models}
+            
+            if prompt_type not in all_models:
+                logger.warning(f"Unknown prompt type: {prompt_type}, using default generator")
+                return "replicate"  # Default generator
+            
+            model_config = all_models[prompt_type]
+            generator = model_config.get("generator", "replicate")  # Default to replicate
+            
+            return generator
+            
+        except Exception as e:
+            logger.error(f"Error getting generator for type {prompt_type}: {e}")
+            return "replicate"  # Default generator
     
     def get_audio_keywords(self) -> List[str]:
         """Get audio detection keywords"""
@@ -193,14 +217,22 @@ class ModelConfigManager:
                         "NEW_IMAGE": {"model": "black-forest-labs/flux-1.1-pro"},
                         "NEW_IMAGE_REF": {"model": "runway_gen4_image"},
                         "EDIT_IMAGE": {"model": "black-forest-labs/flux-kontext-max"},
-                        "EDIT_IMAGE_REF": {"model": "runway_gen4_image"}
+                        "EDIT_IMAGE_REF": {"model": "runway_gen4_image"},
+                        "EDIT_IMAGE_ADD_NEW": {"model": "runway_gen4_image"},
+                        "EDIT_IMAGE_REMOVE": {"model": "runway_gen4_image"},
+                        "EDIT_STYLE": {"model": "runway_gen4_image"},
+                        "EDIT_STYLE_REF": {"model": "runway_gen4_image"},
+                        "EDIT_FACE_SWAP": {"model": "runway_gen4_image"},
+                        "VIRTUAL_TRYON": {"model": "runway_gen4_image"}
                     },
                     "video_generation": {
-                        "NEW_VIDEO": {"model": "minimax/video-01"},
-                        "NEW_VIDEO_WITH_AUDIO": {"model": "google/veo-3"},
-                        "IMAGE_TO_VIDEO": {"model": "minimax/video-01"},
-                        "IMAGE_TO_VIDEO_WITH_AUDIO": {"model": "minimax/video-01"},
-                        "EDIT_IMAGE_REF_TO_VIDEO": {"model": "minimax/video-01"}
+                        "NEW_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "NEW_VIDEO_REF": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "IMAGE_TO_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "IMAGE_TO_VIDEO_WITH_AUDIO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "EDIT_IMAGE_REF_TO_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "EDIT_VIDEO": {"model": "runway_gen4_video"},
+                        "EDIT_VIDEO_REF": {"model": "runway_gen4_video"}
                     }
                 },
                 "routing_rules": {

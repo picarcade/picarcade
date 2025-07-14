@@ -3,146 +3,77 @@
 # Update models here and they will be automatically applied to the system
 
 model_routing:
-  description: "Centralized model routing configuration for all workflow types"
-  last_updated: "2025-06-16"
-  version: "1.0.0"
-  
-  # Image Generation Models
+  description: "Production Model Routing Configuration - Sprint 3"
+  version: "3.0.0"
   models:
     image_generation:
       NEW_IMAGE:
         model: "black-forest-labs/flux-1.1-pro"
-        description: "Basic image generation without references"
-        cost_per_generation: 0.03
-        parameters:
-          width: 1024
-          height: 1024
-          num_outputs: 1
-          guidance_scale: 3.5
-          num_inference_steps: 28
-      
+        generator: "replicate"
       NEW_IMAGE_REF:
-        model: "runway_gen4_image"
-        description: "Image generation with reference images"
-        cost_per_generation: 0.08
-        fallback_model: "black-forest-labs/flux-1.1-pro"
-        special_rules:
-          multi_reference_threshold: 2
-          multi_reference_model: "runway_gen4_image"
-        parameters:
-          width: 1024
-          height: 1024
-          structure_control_strength: 0.3
-          style_control_strength: 0.7
-      
+        model: "runway_gen4_image" 
+        generator: "runway"
       EDIT_IMAGE:
         model: "black-forest-labs/flux-kontext-max"
-        description: "Working image editing without references"
-        cost_per_generation: 0.04
-        fallback_model: "black-forest-labs/flux-1.1-pro"
-        parameters:
-          width: 1024
-          height: 1024
-          num_outputs: 1
-          guidance_scale: 3.5
-          strength: 0.8
-      
+        generator: "replicate"
       EDIT_IMAGE_REF:
         model: "runway_gen4_image"
-        description: "Working image editing with reference images"
-        cost_per_generation: 0.10
-        fallback_model: "black-forest-labs/flux-kontext-max"
-        special_rules:
-          multi_reference_threshold: 2
-          multi_reference_model: "runway_gen4_image"
-        parameters:
-          width: 1024
-          height: 1024
-          structure_control_strength: 0.5
-          style_control_strength: 0.6
+        generator: "runway"
+      EDIT_IMAGE_ADD_NEW:
+        model: "runway_gen4_image"
+        generator: "runway"
     
-    # Video Generation Models
     video_generation:
       NEW_VIDEO:
-        model: "minimax/video-01"
-        description: "Text-to-video without audio"
-        cost_per_generation: 0.20
-        parameters:
-          fps: 25
-          frames: 125
-          prompt_optimizer: true
-      
+        model: "veo-2.0-generate-001"
+        generator: "google_ai"
       NEW_VIDEO_WITH_AUDIO:
-        model: "google/veo-3"
-        description: "Text-to-video with audio (reserved for audio-only scenarios)"
-        cost_per_generation: 0.35
-        fallback_model: "minimax/video-01"
-        special_rules:
-          audio_required: true
-          no_working_image: true
-          audio_keywords: 
-            - "singing"
-            - "song" 
-            - "music"
-            - "voice"
-            - "speak"
-            - "talk"
-            - "audio"
-            - "sound"
-            - "melody"
-            - "rhythm"
-            - "beat"
-            - "lyrics"
-        parameters:
-          resolution: "1280x720"
-          duration: 5
-          audio_quality: "high"
-      
+        model: "veo-3.0-generate-preview"
+        generator: "google_ai"
       IMAGE_TO_VIDEO:
-        model: "minimax/video-01"
-        description: "Animate existing image without audio"
-        cost_per_generation: 0.25
-        parameters:
-          fps: 25
-          frames: 125
-          prompt_optimizer: true
-      
+        model: "veo-2.0-generate-001" 
+        generator: "google_ai"
       IMAGE_TO_VIDEO_WITH_AUDIO:
-        model: "minimax/video-01"
-        description: "Animate existing image with audio"
-        cost_per_generation: 0.30
-        fallback_model: "minimax/video-01"
-        parameters:
-          fps: 25
-          frames: 125
-          prompt_optimizer: true
-      
+        model: "veo-3.0-generate-preview"
+        generator: "google_ai"
       EDIT_IMAGE_REF_TO_VIDEO:
-        model: "minimax/video-01"
-        description: "Video generation using reference images"
-        cost_per_generation: 0.35
-        parameters:
-          fps: 25
-          frames: 125
-          prompt_optimizer: true
+        model: "veo-2.0-generate-001"
+        generator: "google_ai"
+  
+
+
+# Model selection weights (for routing decisions)
+model_weights:
+  quality_priority:
+    "veo-3.0-generate-preview": 1.0
+    "veo-2.0-generate-001": 0.9
+    "runway-gen3": 0.8
+    "flux-1.1-pro": 1.0
+    "flux-dev": 0.9
+  
+  cost_priority:
+    "flux-dev": 1.0
+    "flux-1.1-pro": 0.9
+    "veo-2.0-generate-001": 1.0
+    "veo-3.0-generate-preview": 0.9
+    "runway-gen3": 0.6
+  
+  speed_priority:
+    "flux-dev": 1.0
+    "flux-1.1-pro": 0.9
+    "veo-2.0-generate-001": 1.0
+    "veo-3.0-generate-preview": 0.8
+    "runway-gen3": 0.7
 
   # Routing Rules Configuration
   routing_rules:
-    multi_reference_routing:
-      enabled: true
-      threshold: 2
-      target_model: "runway_gen4_image"
-      applies_to: 
-        - "NEW_IMAGE_REF"
-        - "EDIT_IMAGE_REF"
-      description: "Route 2+ reference images to Runway for better quality"
     
+    # Audio detection rules
     audio_detection:
       enabled: true
-      audio_keywords:
+      audio_keywords: 
         - "singing"
-        - "sing" 
-        - "song"
+        - "song" 
         - "music"
         - "audio"
         - "sound"
@@ -151,87 +82,69 @@ model_routing:
         - "talk"
         - "lyrics"
         - "melody"
-        - "chorus"
-        - "verse"
-        - "tune"
-        - "rhythm"
-        - "beat"
         - "vocal"
-        - "microphone"
-        - "saying"
-        - "says"
-        - "said"
-        - "tells"
-        - "telling"
-        - "announces"
-        - "whispers"
-        - "shouts"
-        - "screams"
-        - "background music"
-        - "nature sounds"
-      video_audio_model: "google/veo-3"
-      image_audio_model: "minimax/video-01"
+        - "narration"
+        - "dialogue"
+        - "conversation"
+        - "interview"
+        - "interviewing"
+        - "reporter"
+        - "news report"
+        - "press conference"
+        - "Q&A"
+        - "asking questions"
+        - "discussion"
+        - "debate"
+        - "meeting"
+        - "presentation"
+        - "lecture"
+        - "speech"
+        - "announcement"
+        - "characters talking"
+        - "phone call"
+        - "video call"
+        - "broadcasting"
+        - "podcasting"
+        - "storytelling"
     
-    video_detection:
+    # Multi-reference handling
+    multi_reference_routing:
       enabled: true
-      video_keywords:
-        - "create video"
-        - "make video"
-        - "generate video"
-        - "video of"
-        - "animate"
-        - "animation"
-        - "make it move"
-        - "bring to life"
-        - "turn into video"
-        - "video version"
-        - "moving"
-        - "motion"
-        - "animated"
-        - "video clip"
-        - "movie"
-        - "film"
-        - "flow naturally"
-        - "create a video"
-      transform_keywords:
-        - "transform this image into a video"
-        - "transform into video"
-      motion_keywords: 
-        - "move"
-        - "movement"
-      motion_context_required: 
-        - "image"
-        - "this"
-      motion_exclusions: 
-        - "remove"
-    
-    edit_detection:
+      threshold: 2
+      target_model: "runway_gen4_image"
+      applies_to: ["NEW_IMAGE_REF", "EDIT_IMAGE_REF"]
+      
+    # Fallback routing
+    fallback_routing:
       enabled: true
-      edit_keywords:
-        - "edit"
-        - "change"
-        - "modify"
-        - "adjust"
-        - "add"
-        - "remove"
-        - "make it"
-        - "turn it"
-        - "improve"
-        - "enhance"
-        - "fix"
-        - "update"
-        - "make the"
-        - "make this"
-
-  # Fallback Configuration
-  fallback_configuration:
-    circuit_breaker_enabled: true
-    fallback_rules:
-      no_images: "NEW_IMAGE"
-      working_image_only: "EDIT_IMAGE"
-      references_only: "NEW_IMAGE_REF"
-      working_plus_references: "EDIT_IMAGE_REF"
-    default_models:
-      image: "black-forest-labs/flux-1.1-pro"
-      video: "minimax/video-01"
-      edit: "black-forest-labs/flux-kontext-max"
+      rules:
+        - from: "runway_gen4_image"
+          to: "black-forest-labs/flux-1.1-pro"
+          condition: "api_error"
+        - from: "veo-2.0-generate-001"
+          to: "minimax/video-01"
+          condition: "api_error"
+          
+    # Cost-based routing
+    cost_based_routing:
+      enabled: true
+      cost_thresholds:
+        low: 0.10
+        medium: 0.25
+        high: 0.50
+      preferences:
+        prefer_lower_cost: true
+        
+    # Quality-based routing
+    quality_routing:
+      enabled: true
+      quality_preferences:
+        image_quality: "high"
+        video_quality: "high"
+        audio_quality: "high"
+        
+    # Performance-based routing
+    performance_routing:
+      enabled: true
+      max_generation_time: 300
+      timeout_fallback: true

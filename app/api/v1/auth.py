@@ -67,6 +67,17 @@ async def login(request: LoginRequest):
                 detail="Invalid email or password"
             )
         
+        # Create a session record in user_sessions table
+        session_id = auth_result["session"].access_token if auth_result["session"] else auth_result["access_token"]
+        user_id = auth_result["user"].id if hasattr(auth_result["user"], 'id') else str(auth_result["user"])
+        
+        # Create session record for tracking
+        await session_manager.create_session(
+            session_id=session_id,
+            user_id=user_id,
+            metadata={"login_time": "now", "source": "login_endpoint"}
+        )
+        
         return AuthResponse(
             user=auth_result["user"].__dict__,
             session=auth_result["session"].__dict__ if auth_result["session"] else None,
@@ -100,6 +111,17 @@ async def register(request: RegisterRequest):
             raise HTTPException(
                 status_code=400,
                 detail="Registration failed. Email may already be in use."
+            )
+        
+        # Create a session record in user_sessions table if session exists
+        if auth_result.get("session"):
+            session_id = auth_result["session"].access_token
+            user_id = auth_result["user"].id if hasattr(auth_result["user"], 'id') else str(auth_result["user"])
+            
+            await session_manager.create_session(
+                session_id=session_id,
+                user_id=user_id,
+                metadata={"registration_time": "now", "source": "register_endpoint"}
             )
         
         return AuthResponse(

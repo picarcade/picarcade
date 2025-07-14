@@ -232,16 +232,30 @@ class SupabaseSessionManager:
             # Set expiry to 1 hour from now
             expires_at = datetime.utcnow() + timedelta(hours=1)
             
-            # Update or insert session
-            response = self.supabase.table("user_sessions")\
-                .upsert({
-                    "session_id": session_id,
-                    "user_id": user_id,
+            # First try to update existing session
+            update_response = self.supabase.table("user_sessions")\
+                .update({
                     "current_working_image": image_url,
                     "expires_at": expires_at.isoformat() + "Z",
                     "updated_at": datetime.utcnow().isoformat() + "Z"
                 })\
+                .eq("session_id", session_id)\
                 .execute()
+            
+            # If no rows were updated, insert a new session
+            if not update_response.data:
+                insert_response = self.supabase.table("user_sessions")\
+                    .insert({
+                        "session_id": session_id,
+                        "user_id": user_id,
+                        "current_working_image": image_url,
+                        "expires_at": expires_at.isoformat() + "Z",
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    })\
+                    .execute()
+                response = insert_response
+            else:
+                response = update_response
             
             if response.data:
                 print(f"[DEBUG] SessionManager: Session {session_id} updated successfully")

@@ -1,182 +1,147 @@
 {
   "model_routing": {
-    "description": "Centralized model routing configuration for all workflow types",
-    "last_updated": "2025-06-16",
-    "version": "1.0.0",
+    "description": "Production Model Routing Configuration - Sprint 3",
+    "version": "3.0.0",
     "models": {
-      "image_generation": {
-        "NEW_IMAGE": {
-          "model": "black-forest-labs/flux-1.1-pro",
-          "description": "Basic image generation without references",
-          "cost_per_generation": 0.03,
-          "parameters": {
-            "width": 1024,
-            "height": 1024,
-            "num_outputs": 1,
-            "guidance_scale": 3.5,
-            "num_inference_steps": 28
-          }
+      "flux-1.1-pro": {
+        "provider": "replicate",
+        "generator": "replicate",
+        "model_id": "black-forest-labs/flux-1.1-pro",
+        "default_parameters": {
+          "aspect_ratio": "1:1",
+          "output_format": "webp",
+          "output_quality": 80,
+          "prompt_upsampling": false,
+          "safety_tolerance": 2
         },
-        "NEW_IMAGE_REF": {
-          "model": "runway_gen4_image",
-          "description": "Image generation with reference images",
-          "cost_per_generation": 0.08,
-          "fallback_model": "black-forest-labs/flux-1.1-pro",
-          "special_rules": {
-            "multi_reference_threshold": 2,
-            "multi_reference_model": "runway_gen4_image"
-          },
-          "parameters": {
-            "width": 1024,
-            "height": 1024,
-            "structure_control_strength": 0.3,
-            "style_control_strength": 0.7
-          }
-        },
-        "EDIT_IMAGE": {
-          "model": "black-forest-labs/flux-kontext-max",
-          "description": "Working image editing without references",
-          "cost_per_generation": 0.04,
-          "fallback_model": "black-forest-labs/flux-1.1-pro",
-          "parameters": {
-            "width": 1024,
-            "height": 1024,
-            "num_outputs": 1,
-            "guidance_scale": 3.5,
-            "strength": 0.8
-          }
-        },
-        "EDIT_IMAGE_REF": {
-          "model": "runway_gen4_image",
-          "description": "Working image editing with reference images",
-          "cost_per_generation": 0.10,
-          "fallback_model": "black-forest-labs/flux-kontext-max",
-          "special_rules": {
-            "multi_reference_threshold": 2,
-            "multi_reference_model": "runway_gen4_image"
-          },
-          "parameters": {
-            "width": 1024,
-            "height": 1024,
-            "structure_control_strength": 0.5,
-            "style_control_strength": 0.6
-          }
-        }
+        "cost_per_request": 0.04,
+        "supported_parameters": [
+          "aspect_ratio",
+          "output_format",
+          "output_quality",
+          "prompt_upsampling",
+          "safety_tolerance",
+          "seed"
+        ]
       },
-      "video_generation": {
-        "NEW_VIDEO": {
-          "model": "minimax/video-01",
-          "description": "Text-to-video without audio",
-          "cost_per_generation": 0.20,
-          "parameters": {
-            "fps": 25,
-            "frames": 125,
-            "prompt_optimizer": true
-          }
+      "flux-dev": {
+        "provider": "replicate",
+        "generator": "replicate",
+        "model_id": "black-forest-labs/flux-dev",
+        "default_parameters": {
+          "aspect_ratio": "1:1",
+          "output_format": "webp",
+          "output_quality": 80,
+          "num_outputs": 1,
+          "guidance_scale": 3.5,
+          "num_inference_steps": 28
         },
-        "NEW_VIDEO_WITH_AUDIO": {
-          "model": "google/veo-3",
-          "description": "Text-to-video with audio (reserved for audio-only scenarios)",
-          "cost_per_generation": 0.35,
-          "fallback_model": "minimax/video-01",
-          "special_rules": {
-            "audio_required": true,
-            "no_working_image": true,
-            "audio_keywords": ["singing", "song", "music", "voice", "speak", "talk", "audio", "sound", "melody", "rhythm", "beat", "lyrics"]
-          },
-          "parameters": {
-            "resolution": "1280x720",
-            "duration": 5,
-            "audio_quality": "high"
-          }
-        },
-        "IMAGE_TO_VIDEO": {
-          "model": "minimax/video-01",
-          "description": "Animate existing image without audio",
-          "cost_per_generation": 0.25,
-          "parameters": {
-            "fps": 25,
-            "frames": 125,
-            "prompt_optimizer": true
-          }
-        },
-        "IMAGE_TO_VIDEO_WITH_AUDIO": {
-          "model": "minimax/video-01",
-          "description": "Animate existing image with audio",
-          "cost_per_generation": 0.30,
-          "fallback_model": "minimax/video-01",
-          "parameters": {
-            "fps": 25,
-            "frames": 125,
-            "prompt_optimizer": true
-          }
-        },
-        "EDIT_IMAGE_REF_TO_VIDEO": {
-          "model": "minimax/video-01",
-          "description": "Video generation using reference images",
-          "cost_per_generation": 0.35,
-          "parameters": {
-            "fps": 25,
-            "frames": 125,
-            "prompt_optimizer": true
-          }
-        }
-      }
-    },
-    "routing_rules": {
-      "multi_reference_routing": {
-        "enabled": true,
-        "threshold": 2,
-        "target_model": "runway_gen4_image",
-        "applies_to": ["NEW_IMAGE_REF", "EDIT_IMAGE_REF"],
-        "description": "Route 2+ reference images to Runway for better quality"
+        "cost_per_request": 0.003,
+        "supported_parameters": [
+          "aspect_ratio",
+          "output_format",
+          "output_quality",
+          "num_outputs",
+          "guidance_scale",
+          "num_inference_steps",
+          "seed"
+        ]
       },
-      "audio_detection": {
-        "enabled": true,
-        "audio_keywords": [
-          "singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk",
-          "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal",
-          "microphone", "saying", "says", "said", "tells", "telling", "announces",
-          "whispers", "shouts", "screams", "background music", "nature sounds"
+      "veo-3.0-generate-preview": {
+        "provider": "vertex_ai",
+        "generator": "vertex_ai",
+        "model_id": "veo-3.0-generate-preview",
+        "default_parameters": {
+          "duration_seconds": 8,
+          "aspect_ratio": "16:9",
+          "number_of_videos": 1
+        },
+        "cost_per_request": 0.30,
+        "supported_parameters": [
+          "duration_seconds",
+          "aspect_ratio",
+          "number_of_videos",
+          "negative_prompt",
+          "seed",
+          "output_gcs_uri"
         ],
-        "video_audio_model": "google/veo-3",
-        "image_audio_model": "minimax/video-01"
+        "requires_waitlist": true,
+        "notes": "VEO3 requires allowlist access through Google Cloud"
       },
-      "video_detection": {
-        "enabled": true,
-        "video_keywords": [
-          "create video", "make video", "generate video", "video of", "animate", "animation",
-          "make it move", "bring to life", "turn into video", "video version",
-          "moving", "motion", "animated", "video clip", "movie", "film", "flow naturally",
-          "create a video"
-        ],
-        "transform_keywords": [
-          "transform this image into a video", "transform into video"
-        ],
-        "motion_keywords": ["move", "movement"],
-        "motion_context_required": ["image", "this"],
-        "motion_exclusions": ["remove"]
+      "veo-2.0-generate-001": {
+        "provider": "vertex_ai",
+        "generator": "vertex_ai",
+        "model_id": "veo-2.0-generate-001",
+        "default_parameters": {
+          "duration_seconds": 8,
+          "aspect_ratio": "16:9",
+          "number_of_videos": 1
+        },
+        "cost_per_request": 0.25,
+        "supported_parameters": [
+          "duration_seconds",
+          "aspect_ratio",
+          "number_of_videos",
+          "negative_prompt",
+          "seed",
+          "output_gcs_uri"
+        ]
       },
-      "edit_detection": {
-        "enabled": true,
-        "edit_keywords": [
-          "edit", "change", "modify", "adjust", "add", "remove", "make it", "turn it",
-          "improve", "enhance", "fix", "update", "make the", "make this"
+      "runway-gen3": {
+        "provider": "runway",
+        "generator": "runway",
+        "model_id": "gen3a_turbo",
+        "default_parameters": {
+          "duration": 5,
+          "ratio": "16:9"
+        },
+        "cost_per_request": 0.95,
+        "supported_parameters": [
+          "duration",
+          "ratio",
+          "watermark",
+          "seed"
         ]
       }
     },
-    "fallback_configuration": {
-      "circuit_breaker_enabled": true,
-      "fallback_rules": {
-        "no_images": "NEW_IMAGE",
-        "working_image_only": "EDIT_IMAGE",
-        "references_only": "NEW_IMAGE_REF",
-        "working_plus_references": "EDIT_IMAGE_REF"
+    "generation_types": {
+      "image": {
+        "default_model": "flux-1.1-pro",
+        "models": [
+          "flux-1.1-pro",
+          "flux-dev"
+        ]
       },
-      "default_models": {
-        "image": "black-forest-labs/flux-1.1-pro",
-        "video": "minimax/video-01",
-        "edit": "black-forest-labs/flux-kontext-max"
+      "video": {
+        "default_model": "veo-3.0-generate-preview",
+        "models": [
+          "veo-3.0-generate-preview",
+          "veo-2.0-generate-001",
+          "runway-gen3"
+        ]
+      }
+    },
+    "model_weights": {
+      "quality_priority": {
+        "veo-3.0-generate-preview": 1.0,
+        "veo-2.0-generate-001": 0.9,
+        "runway-gen3": 0.8,
+        "flux-1.1-pro": 1.0,
+        "flux-dev": 0.9
+      },
+      "cost_priority": {
+        "flux-dev": 1.0,
+        "flux-1.1-pro": 0.9,
+        "veo-2.0-generate-001": 1.0,
+        "veo-3.0-generate-preview": 0.9,
+        "runway-gen3": 0.6
+      },
+      "speed_priority": {
+        "flux-dev": 1.0,
+        "flux-1.1-pro": 0.9,
+        "veo-2.0-generate-001": 1.0,
+        "veo-3.0-generate-preview": 0.8,
+        "runway-gen3": 0.7
       }
     }
   }

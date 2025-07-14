@@ -18,25 +18,48 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     runway_api_key: Optional[str] = None
     replicate_api_token: Optional[str] = None
+    google_api_key: Optional[str] = None
+    
+    # Google Cloud/Vertex AI settings
+    google_cloud_project: Optional[str] = None
+    google_cloud_location: str = "us-central1"
+    google_application_credentials: Optional[str] = None  # Path to service account JSON file
+    veo3_skip_bucket_check: bool = False  # Skip GCS bucket existence checks for VEO-3
     
     # Generation settings
     default_image_size: str = "1024x1024"
     default_video_duration: int = 5
     max_generation_time: int = 300  # 5 minutes
     
-    # Sprint 3: Infrastructure settings
-    redis_url: Optional[str] = None
-    rate_limit_requests_per_minute: int = 100
-    rate_limit_requests_per_hour: int = 1000
-    cost_limit_per_hour: float = 50.0
+    # Session settings
+    session_expiry_minutes: int = 30
+    
+    # Rate limiting
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 60
+    
+    # Configuration for cache
+    cache_enabled: bool = True
+    cache_ttl: int = 3600  # 1 hour
+    
+    # Circuit breaker
+    circuit_breaker_enabled: bool = True
     circuit_breaker_failure_threshold: int = 5
-    circuit_breaker_timeout: int = 60
-    intent_cache_ttl: int = 3600
-    max_concurrent_classifications: int = 10
-    classification_timeout: int = 30
+    circuit_breaker_recovery_timeout: int = 60
+    
+    # Redis connection
+    redis_url: Optional[str] = None
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_password: Optional[str] = None
+    
+    # Health check
+    health_check_enabled: bool = True
     
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = False
 
+# Global settings instance
 settings = Settings() 

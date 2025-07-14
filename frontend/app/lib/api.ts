@@ -4,7 +4,7 @@ import { apiHelpers } from './supabase'
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://your-api-domain.com' 
-  : 'http://localhost:8000'
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
 
 // Create axios instance with interceptors for authentication
 const api = axios.create({

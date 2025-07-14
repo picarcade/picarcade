@@ -11,19 +11,23 @@ from app.services.model_router import ModelRouter
 import importlib
 import app.services.generators.runway
 import app.services.generators.replicate
+import app.services.generators.google_ai
 
 # Force reload of generator modules to pick up code changes
 importlib.reload(app.services.generators.runway)
 importlib.reload(app.services.generators.replicate)
+importlib.reload(app.services.generators.google_ai)
 
 from app.services.generators.runway import RunwayGenerator
 from app.services.generators.replicate import ReplicateGenerator
+from app.services.generators.google_ai import VertexAIGenerator
 from app.services.session_manager import session_manager
 from app.services.reference_service import ReferenceService
 from app.services.virtual_tryon import VirtualTryOnService
 from app.services.simplified_flow_service import simplified_flow
 from app.core.logging import api_logger
 from app.api.v1.auth import get_current_user
+from app.core.model_config import model_config
 from typing import Optional, Dict, Any
 
 router = APIRouter()
@@ -35,16 +39,21 @@ model_router = ModelRouter()
 
 # Initialize generators  
 def get_runway_generator():
-    """Factory function to create a fresh RunwayGenerator instance"""
-    return RunwayGenerator()
+    """Create a FRESH Runway generator instance - no caching!"""
+    return app.services.generators.runway.RunwayGenerator()
 
 def get_replicate_generator():
-    """Factory function to create a fresh ReplicateGenerator instance"""
-    return ReplicateGenerator()
+    """Create a FRESH Replicate generator instance - no caching!"""
+    return app.services.generators.replicate.ReplicateGenerator()
+
+def get_vertex_ai_generator():
+    """Create a FRESH Vertex AI generator instance - no caching!"""
+    return app.services.generators.google_ai.VertexAIGenerator()
 
 # Keep module-level instances for backward compatibility, but allow fresh creation
 runway_generator = get_runway_generator()
 replicate_generator = get_replicate_generator()
+vertex_ai_generator = get_vertex_ai_generator()
 
 # Initialize virtual try-on service
 virtual_tryon_service = VirtualTryOnService()
@@ -128,9 +137,9 @@ async def generate_content(
         if referenced_image:
             api_logger.debug("Processing references from prompt")
             if current_working_image:
-                # For EDIT_IMAGE_REF, skip reference service enhancement to preserve our structured prompt
-                if flow_result.prompt_type.value == "EDIT_IMAGE_REF":
-                    api_logger.debug("Keeping structured prompt for EDIT_IMAGE_REF", extra={"enhanced_prompt_length": len(flow_result.enhanced_prompt)})
+                # For EDIT_IMAGE_REF and EDIT_IMAGE_ADD_NEW, skip reference service enhancement to preserve our structured prompt
+                if flow_result.prompt_type.value in ["EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW"]:
+                    api_logger.debug("Keeping structured prompt for", extra={"prompt_type": flow_result.prompt_type.value, "enhanced_prompt_length": len(flow_result.enhanced_prompt)})
                     
                     # Just parse references without enhancing the prompt
                     reference_images, missing_tags = await ReferenceService.parse_reference_mentions(
@@ -139,6 +148,13 @@ async def generate_content(
                     )
                     if missing_tags:
                         api_logger.debug("Missing references", extra={"missing_tags": missing_tags})
+                        
+                    # For EDIT_IMAGE_ADD_NEW, manually add working image reference since we skipped ReferenceService enhancement
+                    if flow_result.prompt_type.value == "EDIT_IMAGE_ADD_NEW":
+                        from app.models.generation import ReferenceImage
+                        working_image_ref = ReferenceImage(uri=current_working_image, tag="working_image")
+                        reference_images.append(working_image_ref)
+                        api_logger.debug("Manually added working image reference for EDIT_IMAGE_ADD_NEW")
                 else:
                     # For other types, use full reference service enhancement
                     enhanced_prompt, reference_images = await ReferenceService.enhance_prompt_with_working_image(
@@ -166,7 +182,8 @@ async def generate_content(
             "NEW_IMAGE": "generate_image",
             "NEW_IMAGE_REF": "edit_image",  # NEW_IMAGE_REF uses Kontext like editing
             "EDIT_IMAGE": "edit_image", 
-            "EDIT_IMAGE_REF": "virtual_tryon" if uploaded_image else "edit_image"
+            "EDIT_IMAGE_REF": "virtual_tryon" if uploaded_image else "edit_image",
+            "EDIT_IMAGE_ADD_NEW": "edit_image"  # New: Adding elements to scenes
         }
         
         basic_intent_value = intent_mapping.get(flow_result.prompt_type.value, "generate_image")
@@ -211,13 +228,26 @@ async def generate_content(
             "reference_images": []
         }
         
-        # Add reference images from request if they exist
-        if hasattr(request, 'reference_images') and request.reference_images:
-            for ref_img in request.reference_images:
+        # Add reference images from ReferenceService processing
+        if reference_images:
+            for ref_img in reference_images:
                 context["reference_images"].append({
                     "url": ref_img.uri,
                     "tag": ref_img.tag
                 })
+            api_logger.debug("Added reference images from ReferenceService", extra={"count": len(reference_images)})
+        
+        # Add reference images from request if they exist (fallback/additional)
+        if hasattr(request, 'reference_images') and request.reference_images:
+            for ref_img in request.reference_images:
+                # Avoid duplicates by checking if URI already exists
+                existing_urls = [existing["url"] for existing in context["reference_images"]]
+                if ref_img.uri not in existing_urls:
+                    context["reference_images"].append({
+                        "url": ref_img.uri,
+                        "tag": ref_img.tag
+                    })
+                    api_logger.debug("Added additional reference from request", extra={"tag": ref_img.tag})
         
         api_logger.debug("Model parameters context", extra={
             "context": context,
@@ -453,6 +483,9 @@ async def generate_content(
             "is_face_swap": parameters.get('is_face_swap', False)
         })
         
+        # Check generator configuration from model config
+        configured_generator = model_config.get_generator_for_type(flow_result.prompt_type.value)
+        
         if parameters.get("is_face_swap", False):
             api_logger.debug("Using FRESH RunwayGenerator for face swap")
             generator = get_runway_generator()  # Create fresh instance!
@@ -466,6 +499,16 @@ async def generate_content(
             # Don't override the type if it was already set by the model router (e.g., "image_to_video")
             if "type" not in parameters and 'intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value == "generate_video":
                 parameters["type"] = "video"
+        elif configured_generator == "vertex_ai" or "veo" in selected_model:
+            api_logger.debug("Using FRESH Vertex AI Generator", extra={"model": selected_model, "configured_generator": configured_generator})
+            generator = get_vertex_ai_generator()  # Create fresh instance!
+            parameters["model"] = selected_model
+            
+            # For VEO models that need input images, ensure the working image is passed
+            if current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+                api_logger.debug("VEO model needs input image", extra={"working_image": current_working_image})
+                parameters["image"] = current_working_image
+                parameters["uploaded_image"] = current_working_image
         elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model or "minimax" in selected_model:
             api_logger.debug("Using FRESH ReplicateGenerator", extra={"model": selected_model})
             generator = get_replicate_generator()  # Create fresh instance!

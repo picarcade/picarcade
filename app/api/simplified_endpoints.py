@@ -111,6 +111,7 @@ async def get_available_models():
             "NEW_IMAGE_REF": "runway_gen4_image",
             "EDIT_IMAGE": "black-forest-labs/flux-kontext-max",
             "EDIT_IMAGE_REF": "runway_gen4_image",
+            "EDIT_IMAGE_ADD_NEW": "runway_gen4_image",
             # Video generation models
             "NEW_VIDEO": "minimax/video-01",
             "NEW_VIDEO_WITH_AUDIO": "google/veo-3",

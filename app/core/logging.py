@@ -9,12 +9,12 @@ class StructuredLogger:
     
     def __init__(self, name: str):
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         
         # Create console handler with custom formatter
         if not self.logger.handlers:
             handler = logging.StreamHandler(sys.stdout)
-            handler.setLevel(logging.INFO)
+            handler.setLevel(logging.DEBUG)
             
             # Custom formatter for structured logging
             formatter = logging.Formatter(
@@ -91,9 +91,22 @@ class StructuredLogger:
                             error_message: str = None):
         """Log actual model generation execution"""
         
-        # Sanitize parameters to avoid logging sensitive data
-        safe_parameters = {k: v for k, v in parameters.items() 
-                          if k not in ['api_token', 'api_key', 'secret']}
+        # Sanitize parameters to avoid logging sensitive and large data
+        safe_parameters = {}
+        for k, v in parameters.items():
+            if k in ['api_token', 'api_key', 'secret']:
+                continue
+            elif k in ['image', 'images', 'uploaded_image', 'uploaded_images']:
+                # Log image presence but not data
+                if isinstance(v, list):
+                    safe_parameters[k] = f"[{len(v)} images]"
+                elif v:
+                    safe_parameters[k] = "[image data]"
+            elif k == 'referenceImages' and isinstance(v, list):
+                # Log reference image summary without URIs
+                safe_parameters[k] = [{"tag": img.get("tag", "unknown")} for img in v if isinstance(img, dict)]
+            else:
+                safe_parameters[k] = v
         
         log_data = {
             "event_type": "model_generation",
@@ -132,6 +145,38 @@ class StructuredLogger:
         }
         
         self.logger.info(f"GENERATION_SUMMARY: {json.dumps(log_data, indent=2)}")
+    
+    def debug(self, message: str, extra: Dict[str, Any] = None):
+        """Debug level logging with optional extra data"""
+        if extra:
+            formatted_message = f"{message} | {json.dumps(extra)}"
+        else:
+            formatted_message = message
+        self.logger.debug(formatted_message)
+    
+    def info(self, message: str, extra: Dict[str, Any] = None):
+        """Info level logging with optional extra data"""
+        if extra:
+            formatted_message = f"{message} | {json.dumps(extra)}"
+        else:
+            formatted_message = message
+        self.logger.info(formatted_message)
+    
+    def warning(self, message: str, extra: Dict[str, Any] = None):
+        """Warning level logging with optional extra data"""
+        if extra:
+            formatted_message = f"{message} | {json.dumps(extra)}"
+        else:
+            formatted_message = message
+        self.logger.warning(formatted_message)
+    
+    def error(self, message: str, extra: Dict[str, Any] = None):
+        """Error level logging with optional extra data"""
+        if extra:
+            formatted_message = f"{message} | {json.dumps(extra)}"
+        else:
+            formatted_message = message
+        self.logger.error(formatted_message)
 
 # Create loggers for different components
 intent_logger = StructuredLogger("intent_parser")

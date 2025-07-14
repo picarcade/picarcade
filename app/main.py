@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import db_manager
 from app.services.session_manager import session_manager
@@ -23,11 +24,21 @@ logger.info("API keys loaded: %s",
 from app.api.v1 import generation, uploads, references, auth
 from app.api.simplified_endpoints import router as simplified_router
 
+# Initialize database and session tables on startup
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await db_manager.create_tables()
+    await session_manager.create_session_tables()
+    yield
+    # Shutdown (if needed)
+
 app = FastAPI(
     title="Pictures API",
     description="AI-powered image and video generation with intelligent routing",
     version="1.0.0-phase1",
-    openapi_url=f"{settings.api_v1_str}/openapi.json"
+    openapi_url=f"{settings.api_v1_str}/openapi.json",
+    lifespan=lifespan
 )
 
 # Add CORS middleware for Next.js frontend
@@ -35,19 +46,19 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Next.js dev server
+        "http://localhost:3001",  # Next.js dev server (backup port)
+        "http://localhost:3002",  # Next.js dev server (backup port)
+        "http://localhost:3003",  # Next.js dev server (backup port)
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3003",
         "https://your-domain.vercel.app"  # Production domain
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize database and session tables on startup
-@app.on_event("startup")
-async def startup_event():
-    await db_manager.create_tables()
-    await session_manager.create_session_tables()
 
 # Include API routes
 app.include_router(

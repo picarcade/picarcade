@@ -208,6 +208,49 @@ class ComprehensiveFlowValidator:
             ),
         ])
         
+        # EDIT_IMAGE_ADD_NEW: Adding new elements to scenes
+        scenarios.extend([
+            TestScenario(
+                name="EDIT_IMAGE_ADD_NEW_01_Person_Scene",
+                prompt="Put the woman next to the house",
+                active_image=True, uploaded_image=True, referenced_image=False,
+                expected_type="EDIT_IMAGE_ADD_NEW", expected_model="runway_gen4_image",
+                description="Adding person to scene - classic use case",
+                context={"uploaded_images": ["woman.jpg"]}, reference_count=1
+            ),
+            TestScenario(
+                name="EDIT_IMAGE_ADD_NEW_02_Object_Background",
+                prompt="Add the car to the street scene",
+                active_image=True, uploaded_image=True, referenced_image=False,
+                expected_type="EDIT_IMAGE_ADD_NEW", expected_model="runway_gen4_image",
+                description="Adding object to background scene",
+                context={"uploaded_images": ["car.jpg"]}, reference_count=1
+            ),
+            TestScenario(
+                name="EDIT_IMAGE_ADD_NEW_03_Named_Reference",
+                prompt="Place @person in the background of this scene",
+                active_image=True, uploaded_image=False, referenced_image=True,
+                expected_type="EDIT_IMAGE_ADD_NEW", expected_model="runway_gen4_image",
+                description="Adding named reference to scene"
+            ),
+            TestScenario(
+                name="EDIT_IMAGE_ADD_NEW_04_Multiple_Elements",
+                prompt="Add the person and the dog to the park scene",
+                active_image=True, uploaded_image=True, referenced_image=True,
+                expected_type="EDIT_IMAGE_ADD_NEW", expected_model="runway_gen4_image",
+                description="Adding multiple elements to scene",
+                context={"uploaded_images": ["person.jpg", "dog.jpg"]}, reference_count=3
+            ),
+            TestScenario(
+                name="EDIT_IMAGE_ADD_NEW_05_Insert_Element",
+                prompt="Insert this building into the cityscape",
+                active_image=True, uploaded_image=True, referenced_image=False,
+                expected_type="EDIT_IMAGE_ADD_NEW", expected_model="runway_gen4_image",
+                description="Inserting architectural element",
+                context={"uploaded_images": ["building.jpg"]}, reference_count=1
+            ),
+        ])
+        
         # === VIDEO GENERATION FLOWS ===
         
         # NEW_VIDEO: Text to video without audio

@@ -8,6 +8,7 @@ from app.services.generators.base import BaseGenerator
 from app.models.generation import GenerationResponse
 from app.core.config import settings
 from ..prompt_enhancer import prompt_enhancer
+import re
 
 class ReplicateGenerator(BaseGenerator):
     """Replicate generator implementation"""
@@ -223,9 +224,13 @@ class ReplicateGenerator(BaseGenerator):
                 print(f"[DEBUG] Routing to _call_multi_image_list")
                 return self._call_multi_image_list(prompt, parameters)
             elif model_version == "flux-kontext-apps/multi-image-kontext-max":
-                # Legacy name - redirect to multi-image-list
-                print(f"[DEBUG] Routing to _call_multi_image_list (legacy)")
-                return self._call_multi_image_list(prompt, parameters)
+                # New model for adding elements to scenes
+                print(f"[DEBUG] Routing to _call_multi_image_kontext_max")
+                return self._call_multi_image_kontext_max(prompt, parameters)
+            elif model_version == "flux-kontext-apps/multi-image-kontext-pro":
+                # Legacy model - redirect to multi-image-kontext-max
+                print(f"[DEBUG] Routing to _call_multi_image_kontext_max (legacy redirect)")
+                return self._call_multi_image_kontext_max(prompt, parameters)
             elif model_version == "flux-kontext-apps/change-haircut":
                 # Hair styling model
                 print(f"[DEBUG] Routing to _call_change_haircut")
@@ -372,6 +377,149 @@ class ReplicateGenerator(BaseGenerator):
                 "enhanced_prompt": enhanced_prompt,
                 "modification_type": "face_swap" if is_face_swap else ("virtual_tryon" if is_virtual_tryon and is_outfit_change else ("pose_change" if is_pose_change else "outfit_change" if is_outfit_change else "general")),
                 "has_reference_image": bool(reference_image)
+            }
+        }
+    
+    def _call_multi_image_kontext_max(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the multi-image-kontext-max model for adding elements to scenes"""
+        model_version = "flux-kontext-apps/multi-image-kontext-max"
+        
+        # Extract images from parameters
+        scene_image = parameters.get("image", parameters.get("uploaded_image"))  # Scene/environment
+        person_image = None
+        uploaded_images = parameters.get("uploaded_images", [])
+        
+        # Get the element to add from reference_images in parameters
+        reference_images = parameters.get("reference_images", [])
+        
+        print(f"[DEBUG] multi-image-kontext-max received parameters: {list(parameters.keys())}")
+        print(f"[DEBUG] Scene image (primary): {scene_image}")
+        print(f"[DEBUG] Reference images available: {len(reference_images)}")
+        
+        # Find the person to add (not the working_image)
+        for ref in reference_images:
+            if isinstance(ref, dict):
+                tag = ref.get("tag", "")
+                url = ref.get("url", ref.get("uri", ""))
+                print(f"[DEBUG] Checking reference: tag='{tag}', url='{url[:50]}...'")
+                
+                # Skip the working_image reference - we want to add other elements TO the working image
+                if tag != "working_image" and url:
+                    person_image = url
+                    print(f"[DEBUG] Selected person to add: {tag} -> {url}")
+                    break
+        
+        # Fallback: try uploaded images if no reference found
+        if not person_image and uploaded_images and len(uploaded_images) > 0:
+            person_image = uploaded_images[0]  # Element to add to scene
+            print(f"[DEBUG] Using uploaded image as person: {person_image}")
+        elif not person_image and parameters.get("reference_image"):
+            person_image = parameters.get("reference_image")
+            print(f"[DEBUG] Using reference_image parameter: {person_image}")
+        
+        # Clean up URLs by removing trailing query parameters if empty
+        if scene_image and scene_image.endswith('?'):
+            scene_image = scene_image.rstrip('?')
+        if person_image and person_image.endswith('?'):
+            person_image = person_image.rstrip('?')
+        
+        print(f"[DEBUG] Final scene image: {scene_image}")
+        print(f"[DEBUG] Final person image: {person_image}")
+        
+        if not scene_image:
+            print(f"[ERROR] multi-image-kontext-max requires a scene image")
+            print(f"[ERROR] Available parameters: {parameters}")
+            raise ValueError("multi-image-kontext-max requires a scene image")
+        
+        if not person_image:
+            print(f"[ERROR] multi-image-kontext-max requires a person to add")
+            print(f"[ERROR] Available parameters: {parameters}")
+            print(f"[ERROR] Reference images found: {reference_images}")
+            raise ValueError("multi-image-kontext-max requires a person to add")
+        
+        # Create a simple, clear prompt following the user's example style
+        prompt_lower = prompt.lower()
+        
+        print(f"[DEBUG] PROMPT PARSING START:")
+        print(f"[DEBUG]   Original prompt: '{prompt}'")
+        print(f"[DEBUG]   Lowercase prompt: '{prompt_lower}'")
+        
+        # Extract person identity
+        person_name = "the person"
+        if "finley" in prompt_lower:
+            person_name = "Finley"
+        print(f"[DEBUG]   Extracted person_name: '{person_name}'")
+        
+        # Extract activity/action
+        activity = ""
+        if "skating" in prompt_lower:
+            activity = " skating"
+        elif "walking" in prompt_lower:
+            activity = " walking"
+        elif "running" in prompt_lower:
+            activity = " running"
+        elif "standing" in prompt_lower:
+            activity = " standing"
+        print(f"[DEBUG]   Extracted activity: '{activity}'")
+        
+        # Extract interaction context - fix the regex to find the main subject interaction
+        interaction = ""
+        
+        # Look for key interaction patterns first
+        if "cheetah" in prompt_lower:
+            if "with" in prompt_lower and "cheetah" in prompt_lower:
+                interaction = " with the cheetah"
+            elif "alongside" in prompt_lower and "cheetah" in prompt_lower:
+                interaction = " with the cheetah"
+            else:
+                interaction = " with the cheetah"
+        elif "with" in prompt_lower:
+            # Generic "with" parsing as fallback
+            import re
+            # Look for "with [something]" but exclude technical terms
+            with_match = re.search(r'with (?:a |the )?(?!consistent|natural|lighting|scale|perspective)([^.,\s]+(?:\s+[^.,\s]+)*)', prompt_lower)
+            if with_match:
+                interaction = f" with {with_match.group(1).strip()}"
+        
+        print(f"[DEBUG]   Extracted interaction: '{interaction}'")
+        
+        # Create simple, effective prompt like the user's example
+        enhanced_prompt = f"Put {person_name} into the scene{activity}{interaction}"
+        
+        print(f"[DEBUG] PROMPT PARSING END:")
+        print(f"[DEBUG]   Final enhanced prompt: '{enhanced_prompt}'")
+        print(f"[DEBUG]   Length check - original: {len(prompt)}, enhanced: {len(enhanced_prompt)}")
+        
+        # Build inputs for the multi-image-kontext-max model
+        # Based on user's example, input_image_1 should be the person, input_image_2 should be the scene
+        inputs = {
+            "prompt": enhanced_prompt,
+            "aspect_ratio": parameters.get("aspect_ratio", "16:9"),  # Better for preserving faces
+            "input_image_1": person_image,  # The person (like "woman" in user's example)
+            "input_image_2": scene_image,   # The scene (like "white t-shirt" in user's example)
+            "output_format": parameters.get("output_format", "png"),
+            "safety_tolerance": parameters.get("safety_tolerance", 2)
+        }
+        
+        print(f"[DEBUG] Sending to multi-image-kontext-max:")
+        print(f"[DEBUG]   Original prompt: '{prompt}'")
+        print(f"[DEBUG]   Enhanced prompt: '{enhanced_prompt}'")
+        print(f"[DEBUG]   Person image (input_image_1): '{person_image}'")
+        print(f"[DEBUG]   Scene image (input_image_2): '{scene_image}'")
+        print(f"[DEBUG] FULL INPUTS TO REPLICATE MODEL:")
+        print(f"[DEBUG]   Model: {model_version}")
+        print(f"[DEBUG]   Inputs: {inputs}")
+        
+        output = replicate.run(model_version, input=inputs)
+        return {
+            "output_url": self._extract_url(output) if output else None,
+            "metadata": {
+                "model_version": model_version, 
+                "inputs": inputs, 
+                "enhanced_prompt": enhanced_prompt,
+                "modification_type": "add_person_to_scene",
+                "person_image": person_image,
+                "scene_image": scene_image
             }
         }
     
