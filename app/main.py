@@ -22,6 +22,7 @@ logger.info("API keys loaded: %s",
 
 # Import API routes after environment is loaded
 from app.api.v1 import generation, uploads, references, auth
+from app.api import health
 from app.api.simplified_endpoints import router as simplified_router
 
 # Initialize database and session tables on startup
@@ -53,7 +54,8 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
-        "https://your-domain.vercel.app"  # Production domain
+        "https://*.vercel.app",  # All Vercel deployments
+        "https://picarcade-frontend.vercel.app"  # Your specific frontend
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -85,6 +87,10 @@ app.include_router(
     tags=["references"]
 )
 
+app.include_router(
+    health.router,
+    tags=["health"]
+)
 
 app.include_router(
     simplified_router,
