@@ -1,0 +1,63 @@
+# Backend-specific .vercelignore (root level)
+# This applies to the backend Vercel project
+
+# Frontend (deploy separately)
+frontend/
+
+# Development files
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+*.txt
+!api/requirements.txt
+
+# Test files
+test*
+*test*
+enhanced_test_*
+
+# Development configs
+.black
+.flake8
+.mypy.ini
+
+# Docker (not needed for Vercel backend)
+Dockerfile*
+.dockerignore
+render.yaml
+
+# Memory and session data
+memory/
+sessions/
+
+# Large development files
+*.csv
+*.log
+
+# Example and setup files
+example/
+setup_*.sql
+run_*.sh 

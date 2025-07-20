@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: picarcade-api
+    runtime: docker
+    plan: starter  # Free tier
+    region: oregon  # Choose closest to your users
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    
+    # Auto-deploy on git push
+    autoDeploy: true
+    
+    # Environment variables (add your actual values in Render dashboard)
+    envVars:
+      - key: SUPABASE_URL
+        sync: false  # Set manually in dashboard
+      - key: SUPABASE_KEY  
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REPLICATE_API_TOKEN
+        sync: false
+      - key: RUNWAY_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: picarcade-redis
+          property: connectionString
+    
+    # Health check endpoint
+    healthCheckPath: /health
+    
+    # Build command (optional, Docker will handle this)
+    # buildCommand: "echo 'Docker build'"
+    
+    # Start command (handled by Dockerfile)
+    # startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+  # Redis cache service
+  - type: redis
+    name: picarcade-redis
+    plan: starter  # Free tier (25MB)
+    region: oregon
+    
+    # Redis configuration
+    maxmemoryPolicy: allkeys-lru  # Good for caching 

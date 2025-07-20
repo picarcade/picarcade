@@ -1,0 +1,35 @@
+# Minimal requirements for Vercel (with Runway)
+fastapi==0.100.0
+uvicorn==0.20.0
+pydantic==2.0.0
+
+# Essential HTTP clients
+httpx==0.25.0
+requests==2.28.0
+
+# Image processing (correct version)
+pillow==9.0.0
+
+# Essential only
+python-dotenv==1.0.0
+PyJWT==2.8.0
+
+# AI APIs (required minimums)
+openai==1.0.0
+replicate==0.20.0
+runwayml==3.0.0
+
+# Database (essential for your backend)
+supabase==2.0.0
+asyncpg==0.28.0
+
+# NOTE: Google Cloud dependencies removed for Vercel deployment
+# google-cloud-aiplatform>=1.70.0  # ~100MB+ 
+# google-cloud-storage>=2.14.0     # ~40MB+
+# google-genai>=0.8.0             # Heavy
+
+# Development (optional - exclude in production)
+# pytest>=7.0.0
+# pytest-asyncio>=0.20.0
+# black>=23.0.0
+# flake8>=6.0.0 
