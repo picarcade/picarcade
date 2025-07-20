@@ -93,14 +93,62 @@
         "model_id": "gen3a_turbo",
         "default_parameters": {
           "duration": 5,
-          "ratio": "16:9"
+          "ratio": "1280:768"
         },
         "cost_per_request": 0.95,
         "supported_parameters": [
           "duration",
           "ratio",
-          "watermark",
-          "seed"
+          "seed",
+          "promptText",
+          "promptImage"
+        ]
+      },
+      "runway-gen4": {
+        "provider": "runway",
+        "generator": "runway",
+        "model_id": "gen4_turbo",
+        "default_parameters": {
+          "duration": 10,
+          "ratio": "1280:720"
+        },
+        "cost_per_request": 1.20,
+        "supported_parameters": [
+          "duration",
+          "ratio",
+          "seed",
+          "promptText",
+          "promptImage"
+        ]
+      },
+      "veo-3-fast": {
+        "provider": "replicate",
+        "generator": "replicate",
+        "model_id": "google/veo-3-fast",
+        "default_parameters": {
+          "prompt": ""
+        },
+        "cost_per_request": 0.08,
+        "supported_parameters": [
+          "prompt"
+        ]
+      },
+      "minimax-hailuo-02": {
+        "provider": "replicate",
+        "generator": "replicate",
+        "model_id": "minimax/hailuo-02",
+        "default_parameters": {
+          "prompt_optimizer": true,
+          "resolution": "1080p",
+          "duration": 6
+        },
+        "cost_per_request": 0.05,
+        "supported_parameters": [
+          "prompt",
+          "prompt_optimizer",
+          "first_frame_image",
+          "duration",
+          "resolution"
         ]
       }
     },
@@ -113,35 +161,51 @@
         ]
       },
       "video": {
-        "default_model": "veo-3.0-generate-preview",
+        "default_model": "minimax-hailuo-02",
+        "text_to_video_model": "minimax-hailuo-02",
+        "text_to_video_fallback": "veo-3-fast",
+        "text_to_video_with_audio_model": "veo-3-fast",
+        "image_to_video_model": "runway-gen3",
         "models": [
+          "minimax-hailuo-02",
+          "veo-3-fast",
+          "runway-gen3",
+          "runway-gen4",
           "veo-3.0-generate-preview",
-          "veo-2.0-generate-001",
-          "runway-gen3"
+          "veo-2.0-generate-001"
         ]
       }
     },
     "model_weights": {
       "quality_priority": {
-        "veo-3.0-generate-preview": 1.0,
-        "veo-2.0-generate-001": 0.9,
-        "runway-gen3": 0.8,
+        "runway-gen4": 1.0,
+        "veo-3.0-generate-preview": 0.95,
+        "runway-gen3": 0.9,
+        "minimax-hailuo-02": 0.88,
+        "veo-2.0-generate-001": 0.85,
+        "veo-3-fast": 0.8,
         "flux-1.1-pro": 1.0,
         "flux-dev": 0.9
       },
       "cost_priority": {
+        "minimax-hailuo-02": 1.0,
+        "veo-3-fast": 0.95,
         "flux-dev": 1.0,
         "flux-1.1-pro": 0.9,
-        "veo-2.0-generate-001": 1.0,
-        "veo-3.0-generate-preview": 0.9,
-        "runway-gen3": 0.6
+        "veo-2.0-generate-001": 0.8,
+        "veo-3.0-generate-preview": 0.7,
+        "runway-gen3": 0.6,
+        "runway-gen4": 0.5
       },
       "speed_priority": {
+        "minimax-hailuo-02": 1.0,
+        "veo-3-fast": 0.95,
         "flux-dev": 1.0,
         "flux-1.1-pro": 0.9,
-        "veo-2.0-generate-001": 1.0,
-        "veo-3.0-generate-preview": 0.8,
-        "runway-gen3": 0.7
+        "runway-gen3": 0.8,
+        "runway-gen4": 0.75,
+        "veo-2.0-generate-001": 0.7,
+        "veo-3.0-generate-preview": 0.6
       }
     }
   }

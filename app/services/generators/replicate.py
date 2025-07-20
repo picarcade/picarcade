@@ -691,26 +691,37 @@ class ReplicateGenerator(BaseGenerator):
                 if seed is not None:
                     inputs["seed"] = seed
                     
-            elif "minimax/video-01" in model_name:
-                # MiniMax video-01: supports prompt, first_frame_image, subject_reference, prompt_optimizer
+            elif "minimax/hailuo-02" in model_name:
+                # MiniMax Hailuo-02: supports prompt, first_frame_image, duration, resolution, prompt_optimizer
+                print(f"[DEBUG] Configuring Minimax Hailuo-02 with parameters: {list(parameters.keys())}")
+                
+                # Always include prompt_optimizer (default True for better results)
                 inputs["prompt_optimizer"] = parameters.get("prompt_optimizer", True)
+                print(f"[DEBUG] Hailuo-02 prompt_optimizer: {inputs['prompt_optimizer']}")
                 
-                # Add first frame image if provided (for image-to-video)
-                if parameters.get("requires_first_frame_image"):
-                    # Get the working image or uploaded image for first frame
-                    first_frame = parameters.get("image") or parameters.get("uploaded_image")
-                    if first_frame:
-                        inputs["first_frame_image"] = first_frame
-                        print(f"[DEBUG] Added first_frame_image: {first_frame}")
+                # Add duration (6 or 10 seconds, default 6)
+                duration = parameters.get("duration", 6)
+                if duration in [6, 10]:
+                    inputs["duration"] = duration
+                    print(f"[DEBUG] Hailuo-02 duration: {duration}s")
                 
-                # Add subject reference if provided (for reference-based generation)
-                if parameters.get("requires_subject_reference"):
-                    # Get reference images from context
-                    reference_images = parameters.get("reference_images", [])
-                    if reference_images and len(reference_images) > 0:
-                        # Use first reference as subject reference
-                        inputs["subject_reference"] = reference_images[0].get("url") or reference_images[0].get("uri")
-                        print(f"[DEBUG] Added subject_reference: {inputs['subject_reference']}")
+                # Add resolution (768p or 1080p, default 1080p)
+                resolution = parameters.get("resolution", "1080p")
+                if resolution in ["768p", "1080p"]:
+                    inputs["resolution"] = resolution
+                    print(f"[DEBUG] Hailuo-02 resolution: {resolution}")
+                    
+                    # Note: 10 seconds is only available for 768p
+                    if duration == 10 and resolution != "768p":
+                        inputs["resolution"] = "768p"
+                        print(f"[DEBUG] Hailuo-02 forcing 768p for 10s duration")
+                
+                # Add first frame image if provided (for image-to-video scenarios)
+                first_frame = parameters.get("first_frame_image") or parameters.get("image") or parameters.get("uploaded_image")
+                if first_frame:
+                    inputs["first_frame_image"] = first_frame
+                    print(f"[DEBUG] Hailuo-02 first_frame_image: {first_frame[:50] if len(first_frame) > 50 else first_frame}")
+                    print(f"[DEBUG] This should trigger IMAGE-TO-VIDEO generation")
                     
             elif "runway" in model_name:
                 # Legacy Runway parameters (if still needed)

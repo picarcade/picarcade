@@ -48,12 +48,16 @@ def get_replicate_generator():
 
 def get_vertex_ai_generator():
     """Create a FRESH Vertex AI generator instance - no caching!"""
-    return app.services.generators.google_ai.VertexAIGenerator()
+    try:
+        return app.services.generators.google_ai.VertexAIGenerator()
+    except ValueError as e:
+        print(f"[WARNING] Vertex AI generator not available: {e}")
+        return None
 
 # Keep module-level instances for backward compatibility, but allow fresh creation
 runway_generator = get_runway_generator()
 replicate_generator = get_replicate_generator()
-vertex_ai_generator = get_vertex_ai_generator()
+vertex_ai_generator = get_vertex_ai_generator()  # This can be None if not configured
 
 # Initialize virtual try-on service
 virtual_tryon_service = VirtualTryOnService()
@@ -483,8 +487,54 @@ async def generate_content(
             "is_face_swap": parameters.get('is_face_swap', False)
         })
         
-        # Check generator configuration from model config
-        configured_generator = model_config.get_generator_for_type(flow_result.prompt_type.value)
+        # NEW: Apply updated video routing logic based on input image presence and audio requirements
+        is_video_generation = flow_result.prompt_type.value in ["NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]
+        has_input_image = bool(current_working_image or (request.uploaded_images and len(request.uploaded_images) > 0))
+        
+        # Audio detection - check for audio keywords in prompt or explicit audio request
+        audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", "lyrics", "melody", "vocal", "narration", "dialogue", "conversation"]
+        requires_audio = (flow_result.prompt_type.value in ["NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO_WITH_AUDIO"] or 
+                         any(keyword in request.prompt.lower() for keyword in audio_keywords)) if is_video_generation else False
+        
+        if is_video_generation:
+            if requires_audio:
+                # Audio requests: Use VEO-3-Fast (only model that supports audio)
+                api_logger.debug("Audio video detected: routing to VEO-3-Fast", extra={
+                    "prompt_type": flow_result.prompt_type.value,
+                    "audio_detected": requires_audio
+                })
+                selected_model = "google/veo-3-fast"
+                configured_generator = "replicate"
+            elif has_input_image:
+                # Image-to-video: Use Runway directly (bypass Hailuo-02 safety restrictions)
+                api_logger.debug("Image-to-video detected: routing directly to Runway", extra={
+                    "working_image": current_working_image,
+                    "uploaded_images": len(request.uploaded_images) if request.uploaded_images else 0,
+                    "reason": "bypassing_hailuo_safety_restrictions"
+                })
+                selected_model = "gen3a_turbo"
+                configured_generator = "runway"
+            else:
+                # Text-to-video (no audio): Use Minimax Hailuo-02 as primary, VEO-3-Fast as fallback
+                api_logger.debug("Text-to-video detected: routing to Minimax Hailuo-02", extra={
+                    "prompt_type": flow_result.prompt_type.value
+                })
+                selected_model = "minimax/hailuo-02"
+                configured_generator = "replicate"
+        else:
+            # Check generator configuration from model config
+            configured_generator = model_config.get_generator_for_type(flow_result.prompt_type.value)
+        
+        api_logger.debug("Generator routing decision", extra={
+            "selected_model": selected_model,
+            "configured_generator": configured_generator,
+            "is_face_swap": parameters.get("is_face_swap", False),
+            "uses_runway_references": uses_runway_references,
+            "has_input_image": has_input_image,
+            "is_video_generation": is_video_generation,
+            "requires_audio": requires_audio if is_video_generation else False,
+            "prompt_type": flow_result.prompt_type.value
+        })
         
         if parameters.get("is_face_swap", False):
             api_logger.debug("Using FRESH RunwayGenerator for face swap")
@@ -493,15 +543,52 @@ async def generate_content(
         elif uses_runway_references:
             api_logger.debug("Using FRESH RunwayGenerator due to runway references workflow")
             generator = get_runway_generator()  # Create fresh instance!
-        elif "runway" in selected_model:
-            api_logger.debug("Using FRESH RunwayGenerator", extra={"model": selected_model})
+        elif configured_generator == "runway" or "runway" in selected_model or selected_model in ["gen3a_turbo", "gen4_turbo"]:
+            api_logger.debug("Using FRESH RunwayGenerator", extra={"model": selected_model, "configured_generator": configured_generator})
             generator = get_runway_generator()  # Create fresh instance!
+            
+            # Configure for image-to-video generation
+            if selected_model in ["gen3a_turbo", "gen4_turbo"] and has_input_image:
+                api_logger.debug("Configuring Runway for image-to-video", extra={
+                    "model": selected_model,
+                    "working_image": current_working_image,
+                    "uploaded_images": len(request.uploaded_images) if request.uploaded_images else 0
+                })
+                parameters["model"] = selected_model
+                parameters["type"] = "image_to_video"  # Set the correct type
+                parameters["promptText"] = request.prompt
+                
+                # Set the input image for image-to-video (use both parameter names for compatibility)
+                if current_working_image:
+                    parameters["image"] = current_working_image
+                    parameters["uploaded_image"] = current_working_image
+                    api_logger.debug("Using working image for Runway image-to-video", extra={"image": current_working_image})
+                elif request.uploaded_images and len(request.uploaded_images) > 0:
+                    parameters["image"] = request.uploaded_images[0]
+                    parameters["uploaded_image"] = request.uploaded_images[0]
+                    api_logger.debug("Using uploaded image for Runway image-to-video", extra={"image": request.uploaded_images[0]})
+                
+                # Set video generation parameters
+                parameters["duration"] = 5  # Default 5 seconds
+                if selected_model == "gen3a_turbo":
+                    parameters["ratio"] = "1280:768"
+                else:  # gen4_turbo
+                    parameters["ratio"] = "1280:720"
+                    
             # Don't override the type if it was already set by the model router (e.g., "image_to_video")
-            if "type" not in parameters and 'intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value == "generate_video":
+            elif "type" not in parameters and 'intent_analysis' in locals() and intent_analysis and intent_analysis.detected_intent.value == "generate_video":
                 parameters["type"] = "video"
-        elif configured_generator == "vertex_ai" or "veo" in selected_model:
+        elif configured_generator == "vertex_ai" or (configured_generator != "replicate" and "veo" in selected_model):
             api_logger.debug("Using FRESH Vertex AI Generator", extra={"model": selected_model, "configured_generator": configured_generator})
             generator = get_vertex_ai_generator()  # Create fresh instance!
+            
+            if not generator:
+                api_logger.error("Vertex AI generator not available - Google Cloud not configured")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Vertex AI generator not available. Google Cloud project not configured."
+                )
+            
             parameters["model"] = selected_model
             
             # For VEO models that need input images, ensure the working image is passed
@@ -509,13 +596,81 @@ async def generate_content(
                 api_logger.debug("VEO model needs input image", extra={"working_image": current_working_image})
                 parameters["image"] = current_working_image
                 parameters["uploaded_image"] = current_working_image
-        elif "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model or "minimax" in selected_model:
-            api_logger.debug("Using FRESH ReplicateGenerator", extra={"model": selected_model})
+        elif configured_generator == "replicate" or "flux" in selected_model or "dall-e" in selected_model or "google" in selected_model or "minimax" in selected_model:
+            api_logger.debug("Using FRESH ReplicateGenerator", extra={"model": selected_model, "configured_generator": configured_generator})
             generator = get_replicate_generator()  # Create fresh instance!
             parameters["model"] = selected_model
             
+            # Special handling for different models
+            if selected_model == "minimax/hailuo-02":
+                api_logger.debug("Configuring Minimax Hailuo-02", extra={
+                    "prompt": request.prompt,
+                    "has_image": has_input_image,
+                    "requires_audio": requires_audio
+                })
+                
+                # Hailuo-02 required and default parameters
+                parameters["prompt"] = request.prompt
+                parameters["prompt_optimizer"] = parameters.get("prompt_optimizer", True)
+                parameters["resolution"] = parameters.get("resolution", "1080p")
+                parameters["duration"] = parameters.get("duration", 6)
+                
+                api_logger.debug("Hailuo-02 base parameters", extra={
+                    "prompt_optimizer": parameters["prompt_optimizer"],
+                    "resolution": parameters["resolution"],
+                    "duration": parameters["duration"]
+                })
+                
+                # For text-to-video mode: ensure no image parameters
+                parameters.pop("image", None)
+                parameters.pop("uploaded_image", None)
+                parameters.pop("first_frame_image", None)
+                api_logger.debug("Hailuo-02 text-to-video mode", extra={"mode": "text-to-video"})
+                
+            elif selected_model == "gen3a_turbo" and configured_generator == "runway":
+                # Runway image-to-video configuration
+                api_logger.debug("Configuring Runway for image-to-video", extra={
+                    "prompt": request.prompt,
+                    "has_image": has_input_image
+                })
+                
+                # Set Runway-specific parameters
+                parameters["type"] = "image_to_video"
+                parameters["prompt_text"] = request.prompt
+                parameters["duration"] = parameters.get("duration", 5)
+                parameters["ratio"] = parameters.get("ratio", "1280:720")
+                
+                # Map the input image to Runway's expected parameter
+                if current_working_image:
+                    parameters["prompt_image"] = current_working_image
+                    parameters["image"] = current_working_image
+                    api_logger.debug("Added prompt_image from working image", extra={
+                        "image_url": current_working_image[:50] + "...",
+                        "mode": "runway-image-to-video"
+                    })
+                elif request.uploaded_images and len(request.uploaded_images) > 0:
+                    parameters["prompt_image"] = request.uploaded_images[0]
+                    parameters["image"] = request.uploaded_images[0]
+                    api_logger.debug("Added prompt_image from uploaded image", extra={
+                        "image_url": request.uploaded_images[0][:50] + "...",
+                        "mode": "runway-image-to-video"
+                    })
+                
+                # Remove Hailuo-02 specific parameters
+                parameters.pop("prompt_optimizer", None)
+                parameters.pop("resolution", None)
+                parameters.pop("first_frame_image", None)
+                
+            elif selected_model == "google/veo-3-fast":
+                api_logger.debug("Configuring VEO-3-Fast for text-to-video", extra={"prompt": request.prompt})
+                # VEO-3-Fast uses "prompt" parameter instead of "model"
+                parameters["prompt"] = request.prompt
+                # Remove any image parameters for text-to-video
+                parameters.pop("image", None)
+                parameters.pop("uploaded_image", None)
+                
             # For video models that need input images, ensure the working image is passed
-            if "video" in selected_model and current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+            elif "video" in selected_model and current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
                 api_logger.debug("Video model needs input image", extra={"working_image": current_working_image})
                 parameters["image"] = current_working_image
                 parameters["uploaded_image"] = current_working_image
@@ -530,12 +685,59 @@ async def generate_content(
             parameters["uploaded_images"] = request.uploaded_images
             api_logger.debug("Added uploaded_images to parameters", extra={"count": len(request.uploaded_images)})
 
-        # Execute generation
+        # Log final parameters before generation
+        if selected_model == "minimax/hailuo-02":
+            api_logger.debug("Final Hailuo-02 parameters", extra={
+                "all_parameters": {k: v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v 
+                                 for k, v in parameters.items()},
+                "generation_mode": "text-to-video"
+            })
+        elif selected_model == "gen3a_turbo" and configured_generator == "runway":
+            api_logger.debug("Final Runway parameters", extra={
+                "all_parameters": {k: v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v 
+                                 for k, v in parameters.items()},
+                "has_prompt_image": "prompt_image" in parameters,
+                "generation_mode": "image-to-video"
+            })
+        
+        # Execute generation with fallback support
         result = await generator.generate(
             request.prompt, 
             parameters,
             generation_id=generation_id
         )
+        
+        # Check for fallback scenarios (only for text-to-video now since image-to-video goes directly to Runway)
+        if not result.success and selected_model == "minimax/hailuo-02" and configured_generator == "replicate":
+            # Only text-to-video requests use Hailuo-02 now, so fallback to VEO-3-Fast
+            if not has_input_image and not requires_audio:
+                api_logger.debug("Minimax Hailuo-02 text-to-video failed, falling back to VEO-3-Fast", extra={
+                    "error": result.error_message,
+                    "fallback_model": "google/veo-3-fast"
+                })
+                
+                try:
+                    fallback_parameters = parameters.copy()
+                    fallback_parameters["model"] = "google/veo-3-fast"
+                    # VEO-3-Fast doesn't support prompt_optimizer, resolution, duration
+                    fallback_parameters.pop("prompt_optimizer", None)
+                    fallback_parameters.pop("resolution", None)
+                    fallback_parameters.pop("duration", None)
+                    
+                    api_logger.debug("Retrying with VEO-3-Fast fallback", extra={"model": "google/veo-3-fast"})
+                    fallback_result = await generator.generate(
+                        request.prompt, 
+                        fallback_parameters,
+                        generation_id=generation_id + "_fallback"
+                    )
+                    
+                    if fallback_result.success:
+                        api_logger.info("VEO-3-Fast fallback succeeded", extra={"original_error": result.error_message})
+                        result = fallback_result
+                        result.model_used = "google/veo-3-fast (fallback)"
+                        
+                except Exception as fallback_error:
+                    api_logger.warning("Fallback to VEO-3-Fast also failed", extra={"fallback_error": str(fallback_error)})
         
         # Calculate total execution time
         total_time = time.time() - start_time

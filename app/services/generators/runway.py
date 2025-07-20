@@ -26,8 +26,12 @@ class RunwayGenerator(BaseGenerator):
         print("🔥🔥🔥 RUNWAY GENERATOR __INIT__ CALLED - NEW INSTANCE CREATED! 🔥🔥🔥")
         logger.info("🔥🔥🔥 RUNWAY GENERATOR __INIT__ CALLED - NEW INSTANCE CREATED! 🔥🔥🔥")
         
+        print(f"🔑 DEBUG: Runway API Key present: {bool(settings.runway_api_key)}")
+        print(f"🔑 DEBUG: Runway API Key length: {len(settings.runway_api_key) if settings.runway_api_key else 0}")
+        
         if settings.runway_api_key:
             try:
+                print("🔧 DEBUG: Starting RunwayML client initialization...")
                 # Create custom HTTP client with detailed logging
                 import httpx
                 from runwayml import DefaultHttpxClient
@@ -75,18 +79,31 @@ class RunwayGenerator(BaseGenerator):
                     },
                     http_client=http_client
                 )
+                print("✅ DEBUG: RunwayML client initialized successfully with detailed logging")
                 logger.info(f"RunwayML client initialized with API version 2024-11-06 and detailed logging")
             except Exception as e:
+                print(f"❌ DEBUG: Failed to initialize RunwayML client with logging: {e}")
                 logger.warning(f"Could not initialize RunwayML client with logging: {e}")
-                # Fallback to basic client
-                self.client = RunwayML(
-                    api_key=settings.runway_api_key,
-                    default_headers={
-                        "X-Runway-Version": "2024-11-06"
-                    }
-                )
+                try:
+                    # Fallback to basic client
+                    print("🔄 DEBUG: Trying fallback basic client...")
+                    self.client = RunwayML(
+                        api_key=settings.runway_api_key,
+                        default_headers={
+                            "X-Runway-Version": "2024-11-06"
+                        }
+                    )
+                    print("✅ DEBUG: Basic RunwayML client initialized successfully")
+                    logger.info("Fallback basic RunwayML client initialized successfully")
+                except Exception as fallback_error:
+                    print(f"❌ DEBUG: Fallback client also failed: {fallback_error}")
+                    logger.error(f"Both advanced and fallback RunwayML client initialization failed: {fallback_error}")
+                    self.client = None
         else:
+            print("❌ DEBUG: No Runway API key found, setting client to None")
             self.client = None
+            
+        print(f"🔄 DEBUG: Final client state: {self.client is not None}")
     
     @BaseGenerator._measure_time
     async def generate(self, 
@@ -705,75 +722,124 @@ class RunwayGenerator(BaseGenerator):
         if not self.client:
             raise Exception("Runway API key not configured")
         
-        input_image = parameters.get("image") or parameters.get("uploaded_image")
+        # Check multiple possible image parameter names
+        input_image = (parameters.get("prompt_image") or 
+                      parameters.get("first_frame_image") or 
+                      parameters.get("image") or 
+                      parameters.get("uploaded_image"))
+        
+        print(f"🔍 DEBUG: Checking for input image in parameters:")
+        print(f"   prompt_image: {parameters.get('prompt_image', 'NOT_FOUND')}")
+        print(f"   first_frame_image: {parameters.get('first_frame_image', 'NOT_FOUND')}")
+        print(f"   image: {parameters.get('image', 'NOT_FOUND')}")
+        print(f"   uploaded_image: {parameters.get('uploaded_image', 'NOT_FOUND')}")
+        print(f"   final input_image: {input_image}")
+        
         if not input_image:
             raise Exception("No input image provided for image-to-video generation")
         
-        # Use camelCase parameters from simplified flow service
+        # Use parameters from the request
         prompt_text = parameters.get("promptText", prompt)
         ratio = parameters.get("ratio", "1280:720")
         duration = parameters.get("duration", 5)
+        model = parameters.get("model", "gen4_turbo")
+        
+        print(f"🎬 RUNWAY IMAGE-TO-VIDEO REQUEST:")
+        print(f"   📹 Model: {model}")
+        print(f"   🖼️  Input Image: {input_image[:50]}...")
+        print(f"   📝 Prompt: {prompt_text}")
+        print(f"   📐 Ratio: {ratio}")
+        print(f"   ⏱️  Duration: {duration}s")
         
         # Log the complete, definitive API request being sent to Runway
         complete_api_request = {
             "sdk_method": "client.image_to_video.create",
             "parameters": {
-                "model": "gen4_turbo",
-                "promptImage": input_image,  # ✅ Use camelCase
-                "promptText": prompt_text,  # ✅ Use camelCase
+                "model": model,
+                "prompt_image": input_image,
+                "prompt_text": prompt_text,
                 "ratio": ratio,
                 "duration": duration
             }
         }
-        logger.debug(f"🚀 Runway image_to_video call: {complete_api_request['sdk_method']}")
+        logger.info(f"🚀 Runway image_to_video API call: {complete_api_request}")
         
         try:
-            task = self.client.image_to_video.create(
-                model="gen4_turbo",
-                prompt_image=input_image,  # ✅ Python SDK uses snake_case
-                prompt_text=prompt_text,  # ✅ Python SDK uses snake_case
+            print(f"🚀 CALLING: client.image_to_video.create(model='{model}', prompt_image='{input_image[:50]}...', prompt_text='{prompt_text}', ratio='{ratio}', duration={duration})")
+            
+            # Create the task
+            task_response = self.client.image_to_video.create(
+                model=model,
+                prompt_image=input_image,
+                prompt_text=prompt_text,
                 ratio=ratio,
                 duration=duration
             )
             
-            task_id = task.id
+            task_id = task_response.id
+            print(f"✅ RUNWAY TASK CREATED: {task_id}")
             logger.info(f"Runway image-to-video task created: {task_id}")
             
-            # Poll for completion
-            max_attempts = 60
+            # Poll for completion manually
+            print(f"⏳ Polling task {task_id} for completion...")
+            max_attempts = 120  # 4 minutes max wait time  
             attempt = 0
             
             while attempt < max_attempts:
-                await asyncio.sleep(2)
+                await asyncio.sleep(2)  # Wait 2 seconds between polls
                 attempt += 1
                 
-                task = self.client.tasks.retrieve(task_id)
-                
-                if task.status == "SUCCEEDED":
-                    if task.output and len(task.output) > 0:
-                        output_url = task.output[0]
-                        logger.info(f"Runway task {task_id} completed: {output_url}")
-                        
-                        return {
-                            "output_url": output_url,
-                            "metadata": {
-                                "duration": parameters.get("duration", 5),
-                                "input_image": input_image,
-                                "generation_type": "image_to_video",
-                                "task_id": task_id
-                            }
-                        }
-                    else:
-                        raise Exception("No output URL returned from successful generation")
-                        
-                elif task.status == "FAILED":
-                    error_msg = getattr(task, 'error', 'Unknown error')
-                    raise Exception(f"Runway generation failed: {error_msg}")
+                try:
+                    task = self.client.tasks.retrieve(task_id)
+                    print(f"📊 Task {task_id} status: {task.status} (attempt {attempt}/{max_attempts})")
                     
-            raise Exception(f"Runway generation timed out after {max_attempts * 2} seconds")
+                    if task.status == "SUCCEEDED":
+                        if task.output and len(task.output) > 0:
+                            output_url = task.output[0]
+                            print(f"✅ RUNWAY TASK COMPLETED: {output_url}")
+                            logger.info(f"Runway task {task_id} completed: {output_url}")
+                            
+                            return {
+                                "output_url": output_url,
+                                "metadata": {
+                                    "duration": duration,
+                                    "input_image": input_image,
+                                    "generation_type": "image_to_video",
+                                    "task_id": task_id,
+                                    "model": model,
+                                    "ratio": ratio,
+                                    "attempts": attempt
+                                }
+                            }
+                        else:
+                            raise Exception(f"Task {task_id} succeeded but no output URL returned")
+                    
+                    elif task.status == "FAILED":
+                        error_msg = getattr(task, 'error', {})
+                        failure_code = getattr(task, 'failure_code', 'Unknown')
+                        raise Exception(f"Runway task {task_id} failed: {error_msg} (Code: {failure_code})")
+                    
+                    elif task.status in ["PENDING", "RUNNING"]:
+                        # Continue polling
+                        continue
+                        
+                    else:
+                        print(f"⚠️  Unknown task status: {task.status}")
+                        continue
+                        
+                except Exception as poll_error:
+                    if "failed" in str(poll_error) or "error" in str(poll_error).lower():
+                        raise poll_error
+                    else:
+                        print(f"⚠️  Poll attempt {attempt} failed: {poll_error}")
+                        continue
+            
+            # If we get here, we've exceeded max attempts
+            raise Exception(f"Runway task {task_id} timed out after {max_attempts * 2} seconds")
             
         except Exception as e:
-            if "Runway generation" in str(e) or "timeout" in str(e):
+            print(f"❌ RUNWAY SDK ERROR: {e}")
+            if "Runway" in str(e):
                 raise
             else:
                 raise Exception(f"Runway SDK error: {str(e)}")

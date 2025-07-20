@@ -25,45 +25,59 @@ model_routing:
     
     video_generation:
       NEW_VIDEO:
-        model: "veo-2.0-generate-001"
-        generator: "google_ai"
+        model: "minimax/hailuo-02"
+        generator: "replicate"
+        fallback_model: "google/veo-3-fast"
       NEW_VIDEO_WITH_AUDIO:
-        model: "veo-3.0-generate-preview"
-        generator: "google_ai"
+        model: "google/veo-3-fast"
+        generator: "replicate"
+        # No fallback - VEO-3-Fast is the only option for audio
       IMAGE_TO_VIDEO:
-        model: "veo-2.0-generate-001" 
-        generator: "google_ai"
+        model: "gen3a_turbo"
+        generator: "runway"
+        # No fallback - Runway is primary for image-to-video (bypass Hailuo-02 safety restrictions)
       IMAGE_TO_VIDEO_WITH_AUDIO:
-        model: "veo-3.0-generate-preview"
-        generator: "google_ai"
+        model: "google/veo-3-fast"
+        generator: "replicate"
+        # No fallback - VEO-3-Fast is the only option for audio
       EDIT_IMAGE_REF_TO_VIDEO:
-        model: "veo-2.0-generate-001"
-        generator: "google_ai"
+        model: "gen3a_turbo"
+        generator: "runway"
+        # No fallback - Runway is primary for image-to-video
   
 
 
 # Model selection weights (for routing decisions)
 model_weights:
   quality_priority:
-    "veo-3.0-generate-preview": 1.0
-    "veo-2.0-generate-001": 0.9
-    "runway-gen3": 0.8
+    "gen4_turbo": 1.0
+    "veo-3.0-generate-preview": 0.95
+    "gen3a_turbo": 0.9
+    "minimax/hailuo-02": 0.88
+    "veo-2.0-generate-001": 0.85
+    "google/veo-3-fast": 0.8
     "flux-1.1-pro": 1.0
     "flux-dev": 0.9
   
   cost_priority:
+    "minimax/hailuo-02": 1.0
+    "google/veo-3-fast": 0.95
     "flux-dev": 1.0
     "flux-1.1-pro": 0.9
-    "veo-2.0-generate-001": 1.0
-    "veo-3.0-generate-preview": 0.9
-    "runway-gen3": 0.6
+    "veo-2.0-generate-001": 0.8
+    "veo-3.0-generate-preview": 0.7
+    "gen3a_turbo": 0.6
+    "gen4_turbo": 0.5
   
   speed_priority:
+    "minimax/hailuo-02": 1.0
+    "google/veo-3-fast": 0.95
     "flux-dev": 1.0
     "flux-1.1-pro": 0.9
-    "veo-2.0-generate-001": 1.0
-    "veo-3.0-generate-preview": 0.8
-    "runway-gen3": 0.7
+    "gen3a_turbo": 0.8
+    "gen4_turbo": 0.75
+    "veo-2.0-generate-001": 0.7
+    "veo-3.0-generate-preview": 0.6
 
   # Routing Rules Configuration
   routing_rules:

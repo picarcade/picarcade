@@ -34,6 +34,35 @@ class ModelRouter:
             },
             
             # Video generation models
+            "minimax/hailuo-02": {
+                "type": "video",
+                "speed": 10,     # Fastest text-to-video
+                "quality": 8.5,
+                "cost": 1,       # Most cost-effective
+                "supports": ["generate_video", "image_to_video"],  # No audio support
+                "parameters": ["prompt", "first_frame_image", "duration", "resolution", "prompt_optimizer"]
+            },
+            "google/veo-3-fast": {
+                "type": "video",
+                "speed": 9,      # Very fast text-to-video
+                "quality": 8,
+                "cost": 2,       # Very cost-effective
+                "supports": ["generate_video", "generate_video_with_audio"]
+            },
+            "gen3a_turbo": {
+                "type": "video",
+                "speed": 7,
+                "quality": 8,
+                "cost": 7,
+                "supports": ["image_to_video"]
+            },
+            "gen4_turbo": {
+                "type": "video",
+                "speed": 6,
+                "quality": 9,
+                "cost": 8,
+                "supports": ["image_to_video"]
+            },
             "runway_gen4_turbo": {
                 "type": "video",
                 "speed": 5,
