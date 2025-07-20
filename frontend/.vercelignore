@@ -1,0 +1,31 @@
+# Frontend-specific .vercelignore
+# This applies to the frontend Vercel project
+
+# Backend files (deploy separately)
+/app/
+/api/
+/config/
+/memory/
+requirements*.txt
+vercel.json
+*.py
+
+# Development files
+.env
+.env.test
+*.log
+
+# Documentation
+*.md
+docs/
+
+# Test files
+test*
+*test*
+
+# IDE
+.vscode/
+.idea/
+
+# Dependencies (managed by Vercel)
+node_modules/ 

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:clean": "rmdir /s /q .next 2>nul & next build",
+    "build:win": "if exist .next rmdir /s /q .next && next build",
     "start": "next start",
     "lint": "next lint"
   },
