@@ -1,11 +1,11 @@
 # Frontend-specific .vercelignore
 # This applies to the frontend Vercel project
 
-# Backend files (deploy separately)
-/app/
-/api/
-/config/
-/memory/
+# Backend files (deploy separately) - use relative paths from root
+../app/
+../api/
+../config/
+../memory/
 requirements*.txt
 vercel.json
 *.py
