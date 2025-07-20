@@ -55,7 +55,8 @@ app.add_middleware(
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
         "https://*.vercel.app",  # All Vercel deployments
-        "https://picarcade-frontend.vercel.app"  # Your specific frontend
+        "https://picarcade-frontend.vercel.app",  # Your specific frontend
+        "https://picarcade-frontend-9qdflhju4-jamesskelton-nexefys-projects.vercel.app"  # Current deployment
     ],
     allow_credentials=True,
     allow_methods=["*"],
