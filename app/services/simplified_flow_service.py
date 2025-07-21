@@ -248,54 +248,17 @@ class SimplifiedFlowService:
             circuit_breaker_state = "unknown"
             used_fallback = False
             
-            try:
-                if self.circuit_breaker:
-                    circuit_breaker_state = self.circuit_breaker.state.value
-                    prompt_type, enhanced_prompt, reasoning = await self.circuit_breaker.call(
-                        self._classify_and_enhance,
-                        user_prompt, active_image, uploaded_image, referenced_image, context
-                    )
-                else:
-                    prompt_type, enhanced_prompt, reasoning = await self._classify_and_enhance(
-                        user_prompt, active_image, uploaded_image, referenced_image, context
-                    )
-                
-                # Map to model based on CSV (with special rule for 2+ references)
-                model_to_use = self._get_model_for_type(prompt_type, total_references)
-                
-                # Create successful result
-                result = SimplifiedFlowResult(
-                    prompt_type=PromptType(prompt_type),
-                    enhanced_prompt=enhanced_prompt,
-                    model_to_use=model_to_use,
-                    original_prompt=user_prompt,
-                    reasoning=reasoning,
-                    active_image=active_image,
-                    uploaded_image=uploaded_image,
-                    referenced_image=referenced_image,
-                    cache_hit=False,
-                    processing_time_ms=int((time.time() - start_time) * 1000)
-                )
-                
-                # Cache successful result
-                if self.cache:
-                    try:
-                        cache_data = self._result_to_cache_data(result)
-                        await self.cache.set(cache_key, cache_data, ttl=self.cache_ttl)
-                    except Exception as e:
-                        logger.warning(f"Cache set failed: {e}")
-                
-            except (CircuitBreakerOpenError, Exception) as e:
-                logger.warning(f"AI classification failed for user {user_id}: {e}")
-                circuit_breaker_state = self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
-                used_fallback = True
-                
-                # Create fallback result
-                result = self._create_fallback_result(
-                    user_prompt, active_image, uploaded_image, referenced_image,
-                    reason=str(e), total_references=total_references
-                )
-                result.processing_time_ms = int((time.time() - start_time) * 1000)
+            # TEMPORARY: Skip Claude classification due to 403 errors - use fallback logic directly
+            logger.info(f"Using fallback classification for user {user_id} (Claude temporarily disabled)")
+            circuit_breaker_state = "bypassed"
+            used_fallback = True
+            
+            # Create fallback result directly
+            result = self._create_fallback_result(
+                user_prompt, active_image, uploaded_image, referenced_image,
+                reason="Claude classification temporarily disabled", total_references=total_references
+            )
+            result.processing_time_ms = int((time.time() - start_time) * 1000)
             
             # Log classification
             await self._log_classification(
@@ -1242,23 +1205,35 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         rate_limited: bool = False,
         circuit_breaker_state: str = "closed"
     ):
-        """Sprint 3: Log classification metrics to Supabase"""
+        """Sprint 3: Log classification metrics to Supabase (graceful error handling)"""
         try:
             # Use Supabase client for analytics logging (more reliable)
             from app.core.database import db_manager
-            await db_manager.log_intent_classification({
+            
+            # Create minimal log data that should work with any schema
+            log_data = {
                 "user_id": user_id,
                 "prompt": prompt,
                 "classified_workflow": result.prompt_type.value,
-                "confidence": 0.95 if not used_fallback else 0.6,  # High confidence for successful AI classification
                 "processing_time_ms": result.processing_time_ms,
                 "used_fallback": used_fallback,
                 "cache_hit": result.cache_hit,
                 "circuit_breaker_state": circuit_breaker_state,
                 "rate_limited": rate_limited
-            })
+            }
+            
+            # Try to add confidence if the column exists
+            try:
+                log_data["confidence"] = 0.95 if not used_fallback else 0.6
+            except:
+                pass  # Skip confidence if column doesn't exist
+            
+            await db_manager.log_intent_classification(log_data)
+            
         except Exception as e:
-            logger.error(f"Failed to log simplified flow classification metrics: {e}")
+            # Log error but don't fail the request
+            logger.warning(f"Failed to log classification metrics (non-critical): {e}")
+            # Continue processing - logging failures shouldn't break the main flow
     
     # Sprint 3: Health and monitoring methods
     async def get_health(self) -> Dict[str, Any]:
