@@ -407,6 +407,7 @@ const PerplexityInterface = () => {
         {/* Search Interface */}
         <form onSubmit={handleSubmit} className="relative mb-8">
           <div className={`bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-2xl ${isGenerating ? 'throb-outline' : ''}`}>
+            {/* Main Input Row */}
             <div className="flex items-center gap-3">
               {/* Search Icon */}
               <div className="flex-shrink-0">
@@ -428,75 +429,75 @@ const PerplexityInterface = () => {
                 className="flex-1 bg-transparent text-white placeholder-gray-400 text-lg outline-none disabled:opacity-50"
               />
 
-              {/* Action Icons */}
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <button 
-                  type="button"
-                  onClick={handleStartFresh}
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
-                  disabled={isGenerating}
-                  title="Start fresh - Clear all images and start over"
-                >
-                  <RotateCcw className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  onClick={handleReferencesClick}
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
-                  disabled={isGenerating}
-                  title="Manage references (@mentions)"
-                >
-                  <Tag className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  onClick={handleHistoryClick}
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
-                  disabled={isGenerating}
-                  title="View generation history"
-                >
-                  <History className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                <button 
-                  type="button"
-                  onClick={triggerImageUpload}
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
-                  disabled={isGenerating || isUploading}
-                  title="Upload images"
-                >
-                  {isUploading ? (
-                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                  ) : (
-                    <Paperclip className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                  )}
-                </button>
+              {/* Submit Button */}
+              <button 
+                type="submit"
+                disabled={!inputValue.trim() || isGenerating}
+                className="bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 disabled:cursor-not-allowed p-2 rounded-lg transition-colors flex-shrink-0"
+              >
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 text-white" />
+                )}
+              </button>
+            </div>
 
-                <button 
-                  type="button"
-                  onClick={startCamera}
-                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
-                  disabled={isGenerating || isUploading || showCamera}
-                  title="Take selfie"
-                >
-                  <Camera className="w-5 h-5 text-gray-400 hover:text-gray-300" />
-                </button>
-                
-                {/* Submit Button */}
-                <button 
-                  type="submit"
-                  disabled={!inputValue.trim() || isGenerating}
-                  className="bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 disabled:cursor-not-allowed p-2 rounded-lg transition-colors"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4 text-white" />
-                  )}
-                </button>
-              </div>
+            {/* Action Icons Row - Below Input */}
+            <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-gray-700/30">
+              <button 
+                type="button"
+                onClick={handleStartFresh}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                disabled={isGenerating}
+                title="Start fresh - Clear all images and start over"
+              >
+                <RotateCcw className="w-5 h-5 text-gray-400 hover:text-gray-300" />
+              </button>
+              
+              <button 
+                type="button"
+                onClick={handleReferencesClick}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                disabled={isGenerating}
+                title="Manage references (@mentions)"
+              >
+                <Tag className="w-5 h-5 text-gray-400 hover:text-gray-300" />
+              </button>
+              
+              <button 
+                type="button"
+                onClick={handleHistoryClick}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                disabled={isGenerating}
+                title="View generation history"
+              >
+                <History className="w-5 h-5 text-gray-400 hover:text-gray-300" />
+              </button>
+              
+              <button 
+                type="button"
+                onClick={triggerImageUpload}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                disabled={isGenerating || isUploading}
+                title="Upload images"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                ) : (
+                  <Paperclip className="w-5 h-5 text-gray-400 hover:text-gray-300" />
+                )}
+              </button>
+
+              <button 
+                type="button"
+                onClick={startCamera}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                disabled={isGenerating || isUploading || showCamera}
+                title="Take selfie"
+              >
+                <Camera className="w-5 h-5 text-gray-400 hover:text-gray-300" />
+              </button>
             </div>
           </div>
         </form>
