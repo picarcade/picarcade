@@ -20,10 +20,10 @@ class VertexAIGenerator(BaseGenerator):
         if not settings.google_cloud_project:
             raise ValueError("Google Cloud project not configured")
         
-        # Set required environment variables for google-genai SDK
-        os.environ["GOOGLE_CLOUD_PROJECT"] = settings.google_cloud_project
-        os.environ["GOOGLE_CLOUD_LOCATION"] = "global"  # or "us-central1"
-        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+        # AVOID setting global environment variables that interfere with Replicate
+        # Store configuration locally instead
+        self.google_project = settings.google_cloud_project
+        self.google_location = settings.google_cloud_location or "us-central1"
         
         # Initialize the client (will be done in async context)
         self.client = None
@@ -34,8 +34,14 @@ class VertexAIGenerator(BaseGenerator):
         if self.client is None:
             try:
                 from google import genai
-                self.client = genai.Client()
-                logger.info("Google GenAI client initialized successfully")
+                
+                # Create client with explicit configuration instead of environment variables
+                self.client = genai.Client(
+                    vertexai=True,
+                    project=self.google_project,
+                    location=self.google_location
+                )
+                logger.info("Google GenAI client initialized successfully with explicit config")
             except ImportError:
                 raise ImportError("google-genai package not installed. Run: pip install --upgrade google-genai")
             except Exception as e:
