@@ -104,10 +104,9 @@ class SupabaseSessionManager:
         try:
             print(f"[DEBUG AUTH] Starting token validation for token: {access_token[:50]}...")
             
-            # Method 1: Try new Supabase auth validation (for new API keys)
+            # Method 1: Use get_user() directly with JWT token (FIXED)
             try:
-                print(f"[DEBUG AUTH] Attempting Method 1: New Supabase auth validation")
-                # Create a temporary client with the user's access token
+                print(f"[DEBUG AUTH] Attempting Method 1: Direct get_user with JWT")
                 from supabase import create_client
                 from app.core.config import settings
                 
@@ -125,25 +124,22 @@ class SupabaseSessionManager:
                     }
                 )
                 
-                print(f"[DEBUG AUTH] Setting session with token...")
-                # Set the user's session
-                user_supabase.auth.set_session(access_token, None)
-                
-                print(f"[DEBUG AUTH] Getting user from session...")
-                user_response = user_supabase.auth.get_user()
+                print(f"[DEBUG AUTH] Getting user directly with JWT token...")
+                # Use get_user() directly with the JWT token instead of set_session()
+                user_response = user_supabase.auth.get_user(jwt=access_token)
                 
                 print(f"[DEBUG AUTH] User response: {user_response}")
                 
                 if user_response and user_response.user:
-                    print(f"[DEBUG AUTH] ✅ User validated via new auth method: {user_response.user.id}")
+                    print(f"[DEBUG AUTH] ✅ User validated via Method 1: {user_response.user.id}")
                     return user_response.user.__dict__
                 else:
                     print(f"[DEBUG AUTH] ❌ No user found in response")
                     
             except Exception as e:
-                print(f"[DEBUG AUTH] ❌ New auth method failed: {type(e).__name__}: {e}")
+                print(f"[DEBUG AUTH] ❌ Method 1 failed: {type(e).__name__}: {e}")
             
-            # Method 2: Try direct JWT decoding and validation
+            # Method 2: Try direct JWT decoding and validation (fallback)
             try:
                 print(f"[DEBUG AUTH] Attempting Method 2: Direct JWT validation")
                 user_id = self._extract_user_id_from_jwt(access_token)
