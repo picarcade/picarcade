@@ -251,6 +251,11 @@ async def generate_content(
             "reference_images": []
         }
         
+        # Add working image to context for EDIT_IMAGE_ADD_NEW flows
+        if flow_result.prompt_type.value == "EDIT_IMAGE_ADD_NEW" and current_working_image:
+            context["working_image"] = current_working_image
+            api_logger.debug("Added working image to context for EDIT_IMAGE_ADD_NEW", extra={"working_image": current_working_image})
+        
         # Add reference images from ReferenceService processing
         if reference_images:
             for ref_img in reference_images:

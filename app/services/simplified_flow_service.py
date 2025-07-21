@@ -966,6 +966,16 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 print(f"[DEBUG] SIMPLIFIED: Setting up reference images for EDIT_IMAGE_ADD_NEW")
                 print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
                 
+                # For EDIT_IMAGE_ADD_NEW, add working image as @working_image reference first
+                if "working_image" in context:
+                    working_image_url = context["working_image"]
+                    reference_images.append({
+                        "url": working_image_url,
+                        "uri": working_image_url,  # Both formats for compatibility
+                        "tag": "working_image"
+                    })
+                    print(f"[DEBUG] SIMPLIFIED: Added working image reference: @working_image -> {working_image_url}")
+                
                 # Get reference images from context
                 if "reference_images" in context:
                     print(f"[DEBUG] SIMPLIFIED: Found {len(context['reference_images'])} reference images in context")
@@ -1018,6 +1028,15 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 reference_images = []
                 
                 print(f"[DEBUG] SIMPLIFIED: Checking for reference images in context...")
+                
+                # For EDIT_IMAGE_ADD_NEW, add working image as @working_image reference first
+                if result.prompt_type.value == "EDIT_IMAGE_ADD_NEW" and "working_image" in context:
+                    working_image_url = context["working_image"]
+                    reference_images.append({
+                        "uri": working_image_url,
+                        "tag": "working_image"
+                    })
+                    print(f"[DEBUG] SIMPLIFIED: Added working image reference: @working_image -> {working_image_url}")
                 
                 # Get reference images from context
                 if "reference_images" in context:
