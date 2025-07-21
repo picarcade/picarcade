@@ -81,8 +81,8 @@ class SimplifiedFlowService:
     """
     
     def __init__(self):
-        # Use Anthropic Claude 3.7 Sonnet via Replicate for prompt processing
-        self.model = "anthropic/claude-3.7-sonnet"
+        # Use Anthropic Claude 4 Sonnet via Replicate for prompt processing
+        self.model = "anthropic/claude-4-sonnet"
         
         # Sprint 3: Infrastructure components (initialized async)
         self.cache = None
@@ -160,7 +160,7 @@ class SimplifiedFlowService:
         
         try:
             # Sprint 3: Check rate limits before processing
-            estimated_cost = 0.02  # Claude 3.7 Sonnet cost estimate
+            estimated_cost = 0.02  # Claude 4 Sonnet cost estimate
             
             try:
                 allowed, rate_limit_info = await check_all_rate_limits(
@@ -569,7 +569,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     self.model,
                     input={
                         "prompt": classification_prompt,
-                        "max_tokens": 1024,  # Claude 3.7 Sonnet requires minimum 1024 tokens
+                        "max_tokens": 1024,  # Claude 4 Sonnet requires minimum 1024 tokens
                         "temperature": 0.2  # Low temperature for consistent classification
                     }
                 ):
