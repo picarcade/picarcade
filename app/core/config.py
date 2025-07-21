@@ -8,12 +8,16 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_str: str = "/api/v1"
     
-    # Supabase
+    # Supabase - Updated for new API key system (July 2025)
     supabase_url: str
-    supabase_key: str
-    supabase_service_role_key: str
+    supabase_key: str  # Can be legacy anon key or new publishable key (sb_publishable_...)
+    supabase_service_role_key: str  # Can be legacy service_role or new secret key (sb_secret_...)
     supabase_jwt_secret: Optional[str] = None  # JWT secret for validating user tokens
     supabase_db_password: Optional[str] = None  # Database password for direct PostgreSQL connection
+    
+    # New Supabase API keys (optional, for migration)
+    supabase_publishable_key: Optional[str] = None  # New publishable key (replaces anon)
+    supabase_secret_key: Optional[str] = None  # New secret key (replaces service_role)
     
     # API Keys
     openai_api_key: Optional[str] = None

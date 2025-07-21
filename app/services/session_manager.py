@@ -100,18 +100,50 @@ class SupabaseSessionManager:
             return None
     
     async def get_user_from_token(self, access_token: str) -> Optional[Dict[str, Any]]:
-        """Get user information from JWT access token"""
+        """Get user information from JWT access token - Updated for new Supabase API keys"""
         try:
-            # Use the admin client to validate user tokens
-            # This uses the service role to verify user JWT tokens
-            user_response = self.supabase.auth.admin.get_user_by_id(
-                self._extract_user_id_from_jwt(access_token)
-            )
-            
-            if user_response and user_response.user:
-                # Additional verification: ensure the token is valid
-                if self._verify_jwt_token(access_token):
+            # Method 1: Try new Supabase auth validation (for new API keys)
+            try:
+                # Create a temporary client with the user's access token
+                from supabase import create_client
+                from app.core.config import settings
+                
+                user_supabase = create_client(
+                    settings.supabase_url,
+                    settings.supabase_key,  # Use anon key for user operations
+                    options={
+                        "auth": {
+                            "autoRefreshToken": False,
+                            "persistSession": False
+                        }
+                    }
+                )
+                
+                # Set the user's session
+                user_supabase.auth.set_session(access_token, None)
+                user_response = user_supabase.auth.get_user()
+                
+                if user_response and user_response.user:
+                    if self.verbose_logging:
+                        print(f"[DEBUG] User validated via new auth method: {user_response.user.id}")
                     return user_response.user.__dict__
+                    
+            except Exception as e:
+                if self.verbose_logging:
+                    print(f"[DEBUG] New auth method failed: {e}")
+            
+            # Method 2: Fallback to admin client validation (for legacy keys)
+            user_id = self._extract_user_id_from_jwt(access_token)
+            if user_id:
+                user_response = self.supabase.auth.admin.get_user_by_id(user_id)
+                
+                if user_response and user_response.user:
+                    # Additional verification: ensure the token is valid
+                    if self._verify_jwt_token(access_token):
+                        if self.verbose_logging:
+                            print(f"[DEBUG] User validated via admin method: {user_id}")
+                        return user_response.user.__dict__
+            
             return None
             
         except Exception as e:

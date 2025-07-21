@@ -31,22 +31,30 @@ class UserResponse(BaseModel):
     user: Dict[str, Any]
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Dependency to get current authenticated user from JWT token"""
+    """Dependency to get current authenticated user from JWT token - Updated for new Supabase API keys"""
     try:
         access_token = credentials.credentials
+        print(f"[DEBUG Auth] Attempting to validate token: {access_token[:20]}...")
+        
         user = await session_manager.get_user_from_token(access_token)
         
         if not user:
+            print(f"[DEBUG Auth] Token validation failed - no user returned")
             raise HTTPException(
                 status_code=401,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token - please sign in again"
             )
         
+        print(f"[DEBUG Auth] User validated successfully: {user.get('id', 'unknown')}")
         return user
+        
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"[DEBUG Auth] Authentication error: {e}")
         raise HTTPException(
             status_code=401,
-            detail="Authentication required"
+            detail=f"Authentication failed: {str(e)}"
         )
 
 @router.post("/login", response_model=AuthResponse)
