@@ -25,32 +25,41 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  // Handle OAuth callback errors
+  // Handle OAuth callback errors and session changes
   useEffect(() => {
+    // Listen for auth state changes to handle successful login
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, session?.user?.email)
+      
+      if (event === 'SIGNED_IN' && session) {
+        console.log('✅ User successfully signed in:', session.user.email)
+        setError('')
+        setGoogleLoading(false)
+        onAuthSuccess?.()
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out')
+        setGoogleLoading(false)
+      }
+    })
+
+    // Handle any URL-based errors (though less common with automatic handling)
     const errorParam = searchParams.get('error')
     const errorDescription = searchParams.get('error_description')
     const message = searchParams.get('message')
-    const code = searchParams.get('code')
-    
-    // Debug logging
-    console.log('OAuth Debug:', {
-      error: errorParam,
-      error_description: errorDescription,
-      message,
-      code: code ? 'present' : 'missing',
-      fullUrl: window.location.href
-    })
     
     if (errorParam) {
+      console.log('OAuth URL Error:', {
+        error: errorParam,
+        error_description: errorDescription,
+        message,
+        fullUrl: window.location.href
+      })
+      
       let errorMessage = 'An error occurred during authentication.'
       
       switch (errorParam) {
-        case 'auth_error':
-          errorMessage = message || errorDescription || 'Authentication failed. Please try again.'
-          break
-        case 'no_code':
-          errorMessage = message || 'Authorization was cancelled or failed.'
-          break
         case 'access_denied':
           errorMessage = 'Access was denied. Please try again.'
           break
@@ -65,10 +74,13 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
       }
       
       setError(errorMessage)
+      setGoogleLoading(false)
       // Clean up the URL
       router.replace('/', { scroll: false })
     }
-  }, [searchParams, router])
+
+    return () => subscription.unsubscribe()
+  }, [searchParams, router, onAuthSuccess])
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -115,31 +127,9 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
     setError('')
 
     try {
-      // Use the correct callback URL based on environment
-      // Prioritize environment variable, then picarcade.ai for production, then current origin
-      const isProduction = process.env.NODE_ENV === 'production'
-      const currentOrigin = window.location.origin
-      const productionUrl = process.env.NEXT_PUBLIC_PRODUCTION_URL
-      
-      let baseUrl = currentOrigin
-      
-      // If we have a production URL set in env, use that
-      if (productionUrl) {
-        baseUrl = productionUrl
-      } 
-      // Otherwise, if we're on the Vercel deployment but should be using picarcade.ai
-      else if (isProduction && currentOrigin.includes('vercel.app')) {
-        baseUrl = 'https://picarcade.ai'
-      }
-      
-      const callbackUrl = `${baseUrl}/auth/callback`
-      
-      console.log('🚀 Starting Google OAuth with details:', {
-        isProduction,
-        currentOrigin,
-        productionUrl,
-        baseUrl,
-        callbackUrl,
+      console.log('🚀 Starting Google OAuth with automatic callback handling:', {
+        isProduction: process.env.NODE_ENV === 'production',
+        currentOrigin: window.location.origin,
         supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
         hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
       })
@@ -147,7 +137,7 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: callbackUrl,
+          // Remove custom redirectTo - let Supabase handle it automatically
           scopes: 'openid email profile',
           queryParams: {
             access_type: 'offline',

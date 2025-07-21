@@ -8,7 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce',
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false // Disable to avoid conflicts with manual callback handling
+    detectSessionInUrl: true // Let Supabase automatically handle OAuth callbacks
   }
 })
 
