@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_key: str
     supabase_service_role_key: str
+    supabase_jwt_secret: Optional[str] = None  # JWT secret for validating user tokens
     supabase_db_password: Optional[str] = None  # Database password for direct PostgreSQL connection
     
     # API Keys

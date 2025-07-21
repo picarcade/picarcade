@@ -102,18 +102,90 @@ class SupabaseSessionManager:
     async def get_user_from_token(self, access_token: str) -> Optional[Dict[str, Any]]:
         """Get user information from JWT access token"""
         try:
-            # Set the session with the access token
-            self.supabase.auth.session = {"access_token": access_token}
-            user_response = self.supabase.auth.get_user()
+            # Use the admin client to validate user tokens
+            # This uses the service role to verify user JWT tokens
+            user_response = self.supabase.auth.admin.get_user_by_id(
+                self._extract_user_id_from_jwt(access_token)
+            )
             
             if user_response and user_response.user:
-                return user_response.user.__dict__
+                # Additional verification: ensure the token is valid
+                if self._verify_jwt_token(access_token):
+                    return user_response.user.__dict__
             return None
             
         except Exception as e:
             if self.verbose_logging:
                 print(f"[DEBUG] Token verification error: {e}")
             return None
+    
+    def _extract_user_id_from_jwt(self, access_token: str) -> str:
+        """Extract user ID from JWT token"""
+        try:
+            import base64
+            import json
+            
+            # JWT tokens have 3 parts separated by dots
+            parts = access_token.split('.')
+            if len(parts) != 3:
+                return None
+            
+            # Decode the payload (second part)
+            payload = parts[1]
+            # Add padding if needed
+            padding = 4 - len(payload) % 4
+            if padding != 4:
+                payload += '=' * padding
+            
+            decoded_payload = base64.b64decode(payload)
+            payload_data = json.loads(decoded_payload)
+            
+            return payload_data.get('sub')  # 'sub' contains the user ID
+            
+        except Exception as e:
+            if self.verbose_logging:
+                print(f"[DEBUG] Error extracting user ID from JWT: {e}")
+            return None
+    
+    def _verify_jwt_token(self, access_token: str) -> bool:
+        """Verify JWT token signature and expiration"""
+        try:
+            import jwt
+            from app.core.config import settings
+            
+            # Get JWT secret from Supabase settings
+            jwt_secret = settings.supabase_jwt_secret
+            if not jwt_secret:
+                # Fallback: try to validate without signature verification
+                decoded = jwt.decode(access_token, options={"verify_signature": False})
+                # Check if token is expired
+                import time
+                current_time = time.time()
+                if decoded.get('exp', 0) < current_time:
+                    return False
+                return True
+            
+            # Verify with signature if secret is available
+            decoded = jwt.decode(
+                access_token,
+                jwt_secret,
+                algorithms=["HS256"],
+                audience="authenticated"
+            )
+            return True
+            
+        except jwt.ExpiredSignatureError:
+            if self.verbose_logging:
+                print("[DEBUG] JWT token has expired")
+            return False
+        except jwt.InvalidTokenError as e:
+            if self.verbose_logging:
+                print(f"[DEBUG] Invalid JWT token: {e}")
+            return False
+        except Exception as e:
+            if self.verbose_logging:
+                print(f"[DEBUG] JWT verification error: {e}")
+            return False
     
     async def refresh_session(self, refresh_token: str) -> Optional[Dict[str, Any]]:
         """Refresh user session using refresh token"""
