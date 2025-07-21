@@ -22,8 +22,16 @@ api.interceptors.request.use(async (config) => {
       return config
     }
     
+    console.log('[Auth Debug] Getting auth headers for request:', config.url)
     const authHeaders = await apiHelpers.getAuthHeader()
+    console.log('[Auth Debug] Auth headers received:', {
+      hasAuthorization: !!authHeaders.Authorization,
+      authType: authHeaders.Authorization ? authHeaders.Authorization.substring(0, 20) + '...' : 'none',
+      fullHeaders: Object.keys(authHeaders)
+    })
+    
     Object.assign(config.headers, authHeaders)
+    console.log('[Auth Debug] Final request headers:', Object.keys(config.headers || {}))
   } catch (error) {
     console.warn('Failed to get auth headers:', error)
   }

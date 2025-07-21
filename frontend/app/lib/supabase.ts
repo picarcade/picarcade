@@ -70,28 +70,43 @@ export const apiHelpers = {
   // Get authorization header for API calls
   async getAuthHeader(): Promise<Record<string, string>> {
     try {
+      console.log('[Supabase Auth] Getting session from Supabase...')
       // Get session from Supabase
       const { data: { session }, error } = await supabase.auth.getSession()
+      console.log('[Supabase Auth] Session result:', {
+        hasSession: !!session,
+        hasAccessToken: !!session?.access_token,
+        tokenPreview: session?.access_token ? session.access_token.substring(0, 50) + '...' : 'none',
+        error: error?.message,
+        userEmail: session?.user?.email
+      })
+      
       if (!error && session?.access_token) {
+        console.log('[Supabase Auth] ✅ Using Supabase OAuth token')
         return {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         }
       }
       
+      console.log('[Supabase Auth] No Supabase session, checking localStorage fallback...')
       // Fallback: check localStorage for custom auth session
       const storedSession = localStorage.getItem('auth_session')
       if (storedSession) {
+        console.log('[Supabase Auth] Found stored session in localStorage')
         const session = JSON.parse(storedSession)
         if (session?.access_token) {
+          console.log('[Supabase Auth] ✅ Using localStorage token')
           return {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json'
           }
         }
       }
+      
+      console.log('[Supabase Auth] ❌ No authentication token available')
     } catch (error) {
-      console.warn('Failed to get auth token:', error)
+      console.warn('[Supabase Auth] ❌ Failed to get auth token:', error)
     }
     
     return {

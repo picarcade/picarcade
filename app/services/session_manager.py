@@ -102,11 +102,17 @@ class SupabaseSessionManager:
     async def get_user_from_token(self, access_token: str) -> Optional[Dict[str, Any]]:
         """Get user information from JWT access token - Updated for new Supabase API keys"""
         try:
+            print(f"[DEBUG AUTH] Starting token validation for token: {access_token[:50]}...")
+            
             # Method 1: Try new Supabase auth validation (for new API keys)
             try:
+                print(f"[DEBUG AUTH] Attempting Method 1: New Supabase auth validation")
                 # Create a temporary client with the user's access token
                 from supabase import create_client
                 from app.core.config import settings
+                
+                print(f"[DEBUG AUTH] Creating client with URL: {settings.supabase_url[:50]}...")
+                print(f"[DEBUG AUTH] Using key: {settings.supabase_key[:20]}...")
                 
                 user_supabase = create_client(
                     settings.supabase_url,
@@ -119,36 +125,54 @@ class SupabaseSessionManager:
                     }
                 )
                 
+                print(f"[DEBUG AUTH] Setting session with token...")
                 # Set the user's session
                 user_supabase.auth.set_session(access_token, None)
+                
+                print(f"[DEBUG AUTH] Getting user from session...")
                 user_response = user_supabase.auth.get_user()
                 
-                if user_response and user_response.user:
-                    if self.verbose_logging:
-                        print(f"[DEBUG] User validated via new auth method: {user_response.user.id}")
-                    return user_response.user.__dict__
-                    
-            except Exception as e:
-                if self.verbose_logging:
-                    print(f"[DEBUG] New auth method failed: {e}")
-            
-            # Method 2: Fallback to admin client validation (for legacy keys)
-            user_id = self._extract_user_id_from_jwt(access_token)
-            if user_id:
-                user_response = self.supabase.auth.admin.get_user_by_id(user_id)
+                print(f"[DEBUG AUTH] User response: {user_response}")
                 
                 if user_response and user_response.user:
-                    # Additional verification: ensure the token is valid
-                    if self._verify_jwt_token(access_token):
-                        if self.verbose_logging:
-                            print(f"[DEBUG] User validated via admin method: {user_id}")
-                        return user_response.user.__dict__
+                    print(f"[DEBUG AUTH] ✅ User validated via new auth method: {user_response.user.id}")
+                    return user_response.user.__dict__
+                else:
+                    print(f"[DEBUG AUTH] ❌ No user found in response")
+                    
+            except Exception as e:
+                print(f"[DEBUG AUTH] ❌ New auth method failed: {type(e).__name__}: {e}")
             
+            # Method 2: Try direct JWT decoding and validation
+            try:
+                print(f"[DEBUG AUTH] Attempting Method 2: Direct JWT validation")
+                user_id = self._extract_user_id_from_jwt(access_token)
+                print(f"[DEBUG AUTH] Extracted user ID: {user_id}")
+                
+                if user_id:
+                    print(f"[DEBUG AUTH] Getting user by ID via admin client...")
+                    user_response = self.supabase.auth.admin.get_user_by_id(user_id)
+                    print(f"[DEBUG AUTH] Admin user response: {user_response}")
+                    
+                    if user_response and user_response.user:
+                        # Additional verification: ensure the token is valid
+                        if self._verify_jwt_token(access_token):
+                            print(f"[DEBUG AUTH] ✅ User validated via admin method: {user_id}")
+                            return user_response.user.__dict__
+                        else:
+                            print(f"[DEBUG AUTH] ❌ JWT token verification failed")
+                    else:
+                        print(f"[DEBUG AUTH] ❌ No user found via admin client")
+                else:
+                    print(f"[DEBUG AUTH] ❌ Could not extract user ID from JWT")
+            except Exception as e:
+                print(f"[DEBUG AUTH] ❌ Admin method failed: {type(e).__name__}: {e}")
+            
+            print(f"[DEBUG AUTH] ❌ All validation methods failed")
             return None
             
         except Exception as e:
-            if self.verbose_logging:
-                print(f"[DEBUG] Token verification error: {e}")
+            print(f"[DEBUG AUTH] ❌ Critical error in token validation: {type(e).__name__}: {e}")
             return None
     
     def _extract_user_id_from_jwt(self, access_token: str) -> str:
