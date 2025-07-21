@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera } from 'lucide-react';
+import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera, Send } from 'lucide-react';
 import { generateContent, uploadImage } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
 import GenerationHistory from './GenerationHistory';
@@ -437,7 +437,7 @@ const PerplexityInterface = () => {
                   disabled={isGenerating}
                   title="Start fresh - Clear all images and start over"
                 >
-                  <RotateCcw className="w-5 h-5 text-orange-400 hover:text-orange-300" />
+                  <RotateCcw className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                 </button>
                 
                 <button 
@@ -447,7 +447,7 @@ const PerplexityInterface = () => {
                   disabled={isGenerating}
                   title="Manage references (@mentions)"
                 >
-                  <Tag className="w-5 h-5 text-purple-400 hover:text-purple-300" />
+                  <Tag className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                 </button>
                 
                 <button 
@@ -481,7 +481,7 @@ const PerplexityInterface = () => {
                   disabled={isGenerating || isUploading || showCamera}
                   title="Take selfie"
                 >
-                  <Camera className="w-5 h-5 text-green-400 hover:text-green-300" />
+                  <Camera className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                 </button>
                 
                 {/* Submit Button */}
@@ -493,12 +493,7 @@ const PerplexityInterface = () => {
                   {isGenerating ? (
                     <Loader2 className="w-4 h-4 text-white animate-spin" />
                   ) : (
-                    <div className="flex items-center gap-1">
-                      <div className="w-1 h-3 bg-white rounded-full animate-pulse"></div>
-                      <div className="w-1 h-4 bg-white rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-1 h-2 bg-white rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-1 h-4 bg-white rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
-                    </div>
+                    <Send className="w-4 h-4 text-white" />
                   )}
                 </button>
               </div>
