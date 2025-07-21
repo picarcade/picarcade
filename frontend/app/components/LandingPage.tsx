@@ -126,7 +126,15 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
       
       const callbackUrl = `${baseUrl}/auth/callback`
       
-      console.log('Starting Google OAuth with callback:', callbackUrl)
+      console.log('🚀 Starting Google OAuth with details:', {
+        isProduction,
+        currentOrigin,
+        productionUrl,
+        baseUrl,
+        callbackUrl,
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      })
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -136,14 +144,14 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
       })
 
       if (error) {
-        setError('Failed to sign in with Google')
-        console.error('Google auth error:', error)
+        console.error('❌ Google auth error:', error)
+        setError(`Failed to sign in with Google: ${error.message}`)
         setGoogleLoading(false)
       }
       // Note: Don't set loading to false here as user will be redirected
     } catch (error) {
+      console.error('❌ Google auth exception:', error)
       setError('An error occurred with Google authentication')
-      console.error('Google auth error:', error)
       setGoogleLoading(false)
     }
   }

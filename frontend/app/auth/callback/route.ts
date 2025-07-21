@@ -8,16 +8,28 @@ export async function GET(request: Request) {
   const isProduction = process.env.NODE_ENV === 'production'
   const productionUrl = process.env.NEXT_PUBLIC_PRODUCTION_URL
 
+  console.log('OAuth Callback Debug:', {
+    code: code ? 'present' : 'missing',
+    origin,
+    isProduction,
+    productionUrl,
+    fullUrl: request.url,
+    searchParams: Object.fromEntries(requestUrl.searchParams.entries())
+  })
+
   if (code) {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
+    console.log('Supabase client created, attempting to exchange code for session')
+
     try {
       const { error } = await supabase.auth.exchangeCodeForSession(code)
       
       if (!error) {
+        console.log('OAuth callback successful!')
         // Successful authentication - redirect to main app
         // Use environment variable, then picarcade.ai in production, otherwise use current origin
         let redirectUrl = `${origin}/`
@@ -28,6 +40,7 @@ export async function GET(request: Request) {
           redirectUrl = 'https://picarcade.ai/'
         }
         
+        console.log('Redirecting to:', redirectUrl)
         return NextResponse.redirect(redirectUrl)
       } else {
         console.error('OAuth callback error:', error)
@@ -39,6 +52,7 @@ export async function GET(request: Request) {
           errorRedirectUrl = 'https://picarcade.ai/?error=auth_error'
         }
         
+        console.log('Error redirect URL:', errorRedirectUrl)
         return NextResponse.redirect(errorRedirectUrl)
       }
     } catch (error) {
@@ -51,11 +65,13 @@ export async function GET(request: Request) {
         errorRedirectUrl = 'https://picarcade.ai/?error=auth_error'
       }
       
+      console.log('Exception redirect URL:', errorRedirectUrl)
       return NextResponse.redirect(errorRedirectUrl)
     }
   }
 
   // Return the user to an error page with some instructions
+  console.log('No code parameter found in callback')
   let errorRedirectUrl = `${origin}/?error=no_code`
   
   if (productionUrl) {
@@ -64,5 +80,6 @@ export async function GET(request: Request) {
     errorRedirectUrl = 'https://picarcade.ai/?error=no_code'
   }
   
+  console.log('No code redirect URL:', errorRedirectUrl)
   return NextResponse.redirect(errorRedirectUrl)
 } 
