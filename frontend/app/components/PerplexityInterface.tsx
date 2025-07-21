@@ -381,13 +381,13 @@ const PerplexityInterface = () => {
     // Clear any active working images by clearing the session
     try {
       if (sessionId) {
-        // Call API to clear the session (you might need to implement this endpoint)
-        const response = await fetch(`/api/v1/generation/session/${sessionId}`, {
-          method: 'DELETE'
-        });
+        // Import the authenticated API client
+        const { clearSession } = await import('../lib/api');
+        await clearSession(sessionId);
+        console.log('✅ Session cleared successfully');
       }
     } catch (error) {
-      console.log('Note: Could not clear session (this is normal if no session exists)');
+      console.log('Note: Could not clear session (this is normal if no session exists):', error);
     }
     
     // Force refresh the page state

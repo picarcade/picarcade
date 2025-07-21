@@ -101,12 +101,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      console.log('🚪 Starting sign out process...')
+      
+      // Try to sign out through Supabase first
       const { error } = await supabase.auth.signOut()
+      
       if (error) {
-        console.error('Sign out error:', error)
+        console.warn('Supabase sign out error (continuing with local cleanup):', error)
+        
+        // If Supabase signOut fails, force local session cleanup
+        console.log('🧹 Forcing local session cleanup...')
+        
+        // Clear local state
+        setUser(null)
+        setSession(null)
+        
+        // Clear any localStorage items related to auth
+        try {
+          localStorage.removeItem('sb-izfjglgvaqrqaywfniwi-auth-token')
+          localStorage.removeItem('supabase.auth.token')
+          localStorage.removeItem('auth_session')
+          localStorage.removeItem('picarcade_user_id') // Clear user ID as well
+        } catch (storageError) {
+          console.warn('Error clearing localStorage:', storageError)
+        }
+        
+        console.log('✅ Local session cleanup completed')
+      } else {
+        console.log('✅ Supabase sign out successful')
       }
     } catch (error) {
-      console.error('Sign out error:', error)
+      console.error('Critical sign out error:', error)
+      
+      // Force cleanup even on critical errors
+      setUser(null)
+      setSession(null)
+      
+      // Clear localStorage as fallback
+      try {
+        localStorage.removeItem('sb-izfjglgvaqrqaywfniwi-auth-token')
+        localStorage.removeItem('supabase.auth.token')
+        localStorage.removeItem('auth_session')
+        localStorage.removeItem('picarcade_user_id') // Clear user ID as well
+      } catch (storageError) {
+        console.warn('Error clearing localStorage during fallback:', storageError)
+      }
     }
   }
 

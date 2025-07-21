@@ -313,3 +313,14 @@ export const setWorkingImage = async (sessionId: string, imageUrl: string, userI
     throw error
   }
 }
+
+export const clearSession = async (sessionId: string): Promise<void> => {
+  try {
+    await api.delete(`/api/v1/generation/session/${sessionId}`)
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || error.message)
+    }
+    throw error
+  }
+}
