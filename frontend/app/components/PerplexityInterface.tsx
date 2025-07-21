@@ -35,6 +35,26 @@ const PerplexityInterface = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Check camera availability on component mount
+  useEffect(() => {
+    const checkCameraSupport = () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Camera API not supported in this browser')
+        return false
+      }
+      
+      if (!window.isSecureContext) {
+        console.warn('Camera requires HTTPS. Current URL:', window.location.href)
+        return false
+      }
+      
+      console.log('Camera API supported and secure context available')
+      return true
+    }
+    
+    checkCameraSupport()
+  }, [])
+
   // Close user menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -151,18 +171,63 @@ const PerplexityInterface = () => {
   // Camera functions
   const startCamera = async () => {
     try {
+      // Check if navigator.mediaDevices is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported in this browser')
+      }
+
+      // Check if we're in a secure context (HTTPS required for camera access)
+      if (!window.isSecureContext) {
+        throw new Error('Camera access requires HTTPS. Please use https:// or localhost')
+      }
+
+      console.log('Requesting camera access...')
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        } 
       })
+      
+      console.log('Camera access granted, setting up stream...')
       setStream(mediaStream)
       setShowCamera(true)
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-      }
+      // Wait a bit for the modal to render before setting video source
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream
+          videoRef.current.onloadedmetadata = () => {
+            console.log('Video metadata loaded, camera ready')
+          }
+        }
+      }, 100)
+      
     } catch (error) {
       console.error('Failed to access camera:', error)
-      alert('Failed to access camera. Please ensure camera permissions are granted.')
+      
+      let errorMessage = 'Failed to access camera. '
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage += 'Please allow camera access and try again.'
+        } else if (error.name === 'NotFoundError') {
+          errorMessage += 'No camera found on this device.'
+        } else if (error.name === 'NotSupportedError') {
+          errorMessage += 'Camera not supported in this browser.'
+        } else if (error.name === 'NotReadableError') {
+          errorMessage += 'Camera is already in use by another application.'
+        } else if (error.message.includes('HTTPS')) {
+          errorMessage += 'Camera access requires HTTPS. Please use https:// or localhost.'
+        } else {
+          errorMessage += 'Please ensure camera permissions are granted and try again.'
+        }
+      } else {
+        errorMessage += 'Please ensure camera permissions are granted and try again.'
+      }
+      
+      alert(errorMessage)
     }
   }
 
@@ -491,7 +556,10 @@ const PerplexityInterface = () => {
 
               <button 
                 type="button"
-                onClick={startCamera}
+                onClick={() => {
+                  console.log('Camera button clicked')
+                  startCamera()
+                }}
                 className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors relative"
                 disabled={isGenerating || isUploading || showCamera}
                 title="Take selfie"

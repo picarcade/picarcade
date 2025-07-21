@@ -154,18 +154,63 @@ export default function ReferencesPanel({ isOpen, onClose, userId, onReferenceSe
   // Camera functions
   const startCamera = async () => {
     try {
+      // Check if navigator.mediaDevices is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported in this browser')
+      }
+
+      // Check if we're in a secure context (HTTPS required for camera access)
+      if (!window.isSecureContext) {
+        throw new Error('Camera access requires HTTPS. Please use https:// or localhost')
+      }
+
+      console.log('Requesting camera access...')
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        } 
       })
+      
+      console.log('Camera access granted, setting up stream...')
       setStream(mediaStream)
       setShowCamera(true)
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-      }
+      // Wait a bit for the modal to render before setting video source
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream
+          videoRef.current.onloadedmetadata = () => {
+            console.log('Video metadata loaded, camera ready')
+          }
+        }
+      }, 100)
+      
     } catch (error) {
       console.error('Failed to access camera:', error)
-      alert('Failed to access camera. Please ensure camera permissions are granted.')
+      
+      let errorMessage = 'Failed to access camera. '
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage += 'Please allow camera access and try again.'
+        } else if (error.name === 'NotFoundError') {
+          errorMessage += 'No camera found on this device.'
+        } else if (error.name === 'NotSupportedError') {
+          errorMessage += 'Camera not supported in this browser.'
+        } else if (error.name === 'NotReadableError') {
+          errorMessage += 'Camera is already in use by another application.'
+        } else if (error.message.includes('HTTPS')) {
+          errorMessage += 'Camera access requires HTTPS. Please use https:// or localhost.'
+        } else {
+          errorMessage += 'Please ensure camera permissions are granted and try again.'
+        }
+      } else {
+        errorMessage += 'Please ensure camera permissions are granted and try again.'
+      }
+      
+      alert(errorMessage)
     }
   }
 
@@ -276,7 +321,10 @@ export default function ReferencesPanel({ isOpen, onClose, userId, onReferenceSe
               <Upload className="w-5 h-5 text-purple-400 hover:text-purple-300" />
             </button>
             <button
-              onClick={startCamera}
+              onClick={() => {
+                console.log('Camera button clicked in ReferencesPanel')
+                startCamera()
+              }}
               disabled={isUploading || showCamera}
               className="p-1 hover:bg-gray-700 rounded-lg transition-colors relative"
               title="Take selfie"
