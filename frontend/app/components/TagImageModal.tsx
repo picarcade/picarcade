@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { X, Tag, Save } from 'lucide-react'
 import { createReference, getUserReferences } from '../lib/api'
-import type { Reference } from '../types'
+
 
 interface TagImageModalProps {
   isOpen: boolean
@@ -128,7 +128,17 @@ export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTag
               className="w-full h-32 object-cover rounded-lg border"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
-                target.src = '/placeholder-image.png'
+                target.style.display = 'none'
+                const parent = target.parentElement
+                if (parent) {
+                  parent.innerHTML = `
+                    <div class="w-full h-full bg-gray-200 flex items-center justify-center">
+                      <svg class="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M4 4h16v16H4V4zm2 2v12h12V6H6zm3 4l2 2.5L14 9l4 5H6l3-4z"/>
+                      </svg>
+                    </div>
+                  `
+                }
               }}
             />
           </div>
