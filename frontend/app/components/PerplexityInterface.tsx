@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Paperclip, MapPin, Image, Smile, Mic, Loader2, X, History, Clock, Tag, User, LogOut, RotateCcw } from 'lucide-react';
+import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera } from 'lucide-react';
 import { generateContent, uploadImage } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
 import GenerationHistory from './GenerationHistory';
@@ -28,8 +28,12 @@ const PerplexityInterface = () => {
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Close user menu when clicking outside
   useEffect(() => {
@@ -125,12 +129,6 @@ const PerplexityInterface = () => {
       const uploadResults = await Promise.all(uploadPromises);
       setUploadedImages(prev => [...prev, ...uploadResults]);
       
-      // Add uploaded image URLs to prompt
-      const imageUrls = uploadResults.map(result => result.public_url).join(', ');
-      setInputValue(prev => 
-        prev ? `${prev}\n\nUploaded images: ${imageUrls}` : `Use these images: ${imageUrls}`
-      );
-      
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Upload failed');
     } finally {
@@ -148,26 +146,76 @@ const PerplexityInterface = () => {
 
   const removeUploadedImage = (index: number) => {
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
-    // Update input value to remove the removed image URL
-    const remainingUrls = uploadedImages
-      .filter((_, i) => i !== index)
-      .map(img => img.public_url)
-      .join(', ');
-    
-    if (remainingUrls) {
-      setInputValue(prev => {
-        const lines = prev.split('\n');
-        const nonImageLines = lines.filter(line => !line.includes('images:'));
-        return [...nonImageLines, `Use these images: ${remainingUrls}`].join('\n');
-      });
-    } else {
-      setInputValue(prev => 
-        prev.split('\n').filter(line => !line.includes('images:')).join('\n')
-      );
-    }
   };
 
+  // Camera functions
+  const startCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user' } 
+      })
+      setStream(mediaStream)
+      setShowCamera(true)
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream
+      }
+    } catch (error) {
+      console.error('Failed to access camera:', error)
+      alert('Failed to access camera. Please ensure camera permissions are granted.')
+    }
+  }
 
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop())
+      setStream(null)
+    }
+    setShowCamera(false)
+  }
+
+  const capturePhoto = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    const context = canvas.getContext('2d')
+    
+    if (!context) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    context.drawImage(video, 0, 0)
+
+    // Convert canvas to blob
+    canvas.toBlob(async (blob) => {
+      if (!blob) return
+
+      setIsUploading(true)
+      try {
+        const file = new File([blob], `selfie_${Date.now()}.jpg`, { type: 'image/jpeg' })
+        const uploadResult = await uploadImage(file, `selfie_${Date.now()}`)
+        
+        // Add to uploaded images list (same as regular upload)
+        setUploadedImages(prev => [...prev, uploadResult])
+        stopCamera()
+      } catch (error) {
+        console.error('Failed to upload selfie:', error)
+        setError(error instanceof Error ? error.message : 'Upload failed')
+      } finally {
+        setIsUploading(false)
+      }
+    }, 'image/jpeg', 0.8)
+  }
+
+  // Cleanup camera stream when component unmounts
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [stream])
 
   const handleHistoryClick = () => {
     setShowHistory(true);
@@ -424,6 +472,16 @@ const PerplexityInterface = () => {
                   ) : (
                     <Paperclip className="w-5 h-5 text-gray-400 hover:text-gray-300" />
                   )}
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={startCamera}
+                  className="p-1 hover:bg-gray-700/50 rounded-lg transition-colors relative"
+                  disabled={isGenerating || isUploading || showCamera}
+                  title="Take selfie"
+                >
+                  <Camera className="w-5 h-5 text-green-400 hover:text-green-300" />
                 </button>
                 
                 {/* Submit Button */}
@@ -696,6 +754,51 @@ const PerplexityInterface = () => {
           onClose={() => setShowAuthModal(false)}
           defaultMode="signin"
         />
+
+        {/* Camera Modal */}
+        {showCamera && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-800 rounded-2xl max-w-md w-full mx-4 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Take a Selfie</h3>
+                <button
+                  onClick={stopCamera}
+                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-64 bg-gray-900 rounded-lg object-cover"
+                />
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={capturePhoto}
+                    disabled={isUploading}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isUploading ? 'Processing...' : 'Capture Photo'}
+                  </button>
+                  <button
+                    onClick={stopCamera}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden canvas for photo capture */}
+        <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
   );
