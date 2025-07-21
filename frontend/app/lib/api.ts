@@ -2,9 +2,10 @@ import axios from 'axios'
 import type { GenerationRequest, GenerationResponse, HistoryItem, UploadResponse, Reference } from '../types'
 import { apiHelpers } from './supabase'
 
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-api-domain.com' 
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 
+  (process.env.NODE_ENV === 'production' 
+    ? 'https://picarcade.onrender.com' 
+    : 'http://localhost:8000')
 
 // Create axios instance with interceptors for authentication
 const api = axios.create({
