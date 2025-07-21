@@ -5,16 +5,17 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOi
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    flowType: 'pkce',
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: false // Disable to avoid conflicts with manual callback handling
   }
 })
 
 // Auth helper functions
 export const authHelpers = {
   // Sign up new user
-  async signUp(email: string, password: string, metadata?: any) {
+  async signUp(email: string, password: string, metadata?: Record<string, unknown>) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -59,7 +60,7 @@ export const authHelpers = {
   },
 
   // Listen to auth state changes
-  onAuthStateChange(callback: (event: string, session: any) => void) {
+  onAuthStateChange(callback: (event: string, session: unknown) => void) {
     return supabase.auth.onAuthStateChange(callback)
   }
 }

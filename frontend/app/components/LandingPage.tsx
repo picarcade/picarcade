@@ -29,12 +29,14 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
   useEffect(() => {
     const errorParam = searchParams.get('error')
     const errorDescription = searchParams.get('error_description')
+    const message = searchParams.get('message')
     const code = searchParams.get('code')
     
     // Debug logging
     console.log('OAuth Debug:', {
       error: errorParam,
       error_description: errorDescription,
+      message,
       code: code ? 'present' : 'missing',
       fullUrl: window.location.href
     })
@@ -44,16 +46,22 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
       
       switch (errorParam) {
         case 'auth_error':
-          errorMessage = 'Authentication failed. Please try again.'
+          errorMessage = message || errorDescription || 'Authentication failed. Please try again.'
           break
         case 'no_code':
-          errorMessage = 'Authorization was cancelled or failed.'
+          errorMessage = message || 'Authorization was cancelled or failed.'
           break
         case 'access_denied':
           errorMessage = 'Access was denied. Please try again.'
           break
+        case 'server_error':
+          errorMessage = 'Server error occurred during authentication.'
+          break
+        case 'temporarily_unavailable':
+          errorMessage = 'Authentication service is temporarily unavailable.'
+          break
         default:
-          errorMessage = errorDescription || errorParam || 'An error occurred during authentication.'
+          errorMessage = message || errorDescription || errorParam || 'An error occurred during authentication.'
       }
       
       setError(errorMessage)
@@ -136,10 +144,15 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
         hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
       })
       
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: callbackUrl,
+          scopes: 'openid email profile',
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
         },
       })
 
@@ -147,11 +160,18 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
         console.error('❌ Google auth error:', error)
         setError(`Failed to sign in with Google: ${error.message}`)
         setGoogleLoading(false)
+      } else if (data?.url) {
+        console.log('✅ Redirecting to Google OAuth:', data.url)
+        // OAuth initiation successful, user will be redirected
+        // Don't set loading to false as user will be redirected
+      } else {
+        console.error('❌ No redirect URL received from Supabase')
+        setError('Failed to initiate Google authentication')
+        setGoogleLoading(false)
       }
-      // Note: Don't set loading to false here as user will be redirected
     } catch (error) {
       console.error('❌ Google auth exception:', error)
-      setError('An error occurred with Google authentication')
+      setError(`An error occurred with Google authentication: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setGoogleLoading(false)
     }
   }
