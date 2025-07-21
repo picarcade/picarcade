@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import db_manager
@@ -55,13 +57,26 @@ app.add_middleware(
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
         "https://picarcade-frontend.vercel.app",  # Your specific frontend
-        "https://picarcade-frontend-8ji7jdn1j-jamesskelton-nexefys-projects.vercel.app",  # Latest deployment
+        "https://picarcade-frontend-68ol897kk-jamesskelton-nexefys-projects.vercel.app",  # Latest deployment with auth fix
         "*"  # Allow all origins for testing (remove in production)
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add validation error handler for better 422 debugging
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error("Validation error on %s: %s", request.url, exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "errors": exc.errors(),
+            "body": str(exc.body) if hasattr(exc, 'body') else None
+        }
+    )
 
 # Include API routes
 app.include_router(

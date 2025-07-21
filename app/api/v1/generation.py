@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
+from fastapi.exceptions import RequestValidationError
 import uuid
 import time
 import re
@@ -66,7 +67,7 @@ virtual_tryon_service = VirtualTryOnService()
 async def generate_content(
     request: GenerationRequest,
     background_tasks: BackgroundTasks,
-    current_user: Optional[Dict] = None  # Make auth optional for now
+    current_user: Optional[Dict] = Depends(get_current_user)
 ):
     """
     SIMPLIFIED FLOW: Main generation endpoint using CSV-based decision matrix
@@ -74,6 +75,17 @@ async def generate_content(
     
     generation_id = f"gen_{uuid.uuid4().hex[:12]}"
     start_time = time.time()
+    
+    # DEBUG: Log request details to help diagnose 422 errors
+    api_logger.debug("Generation request received", extra={
+        "generation_id": generation_id,
+        "prompt_length": len(request.prompt) if request.prompt else 0,
+        "user_id": request.user_id,
+        "session_id": request.session_id,
+        "quality_priority": request.quality_priority,
+        "uploaded_images_count": len(request.uploaded_images) if request.uploaded_images else 0,
+        "current_user": current_user is not None
+    })
     
     try:
         # Import simplified flow service
