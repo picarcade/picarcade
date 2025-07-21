@@ -102,8 +102,15 @@ async def generate_content(
             effective_session_id = f"auto_session_{request.user_id}_{timestamp}"
             api_logger.debug("Auto-generated session_id", extra={"session_id": effective_session_id})
         
-        current_working_image = await session_manager.get_current_working_image(effective_session_id)
-        api_logger.debug("Retrieved working image", extra={"working_image": current_working_image})
+        try:
+            current_working_image = await session_manager.get_current_working_image(effective_session_id)
+            api_logger.debug("Retrieved working image", extra={"working_image": current_working_image})
+        except Exception as session_error:
+            api_logger.warning("Session manager error, continuing without working image", extra={
+                "session_id": effective_session_id,
+                "error": str(session_error)
+            })
+            current_working_image = None
         
         # Validate working image
         if current_working_image:

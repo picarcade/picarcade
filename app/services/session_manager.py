@@ -282,14 +282,31 @@ class SupabaseSessionManager:
             response = self.supabase.table("user_sessions")\
                 .select("current_working_image, expires_at")\
                 .eq("session_id", session_id)\
-                .single()\
                 .execute()
             
-            if response.data:
-                print(f"[DEBUG] SessionManager: Query result: {response.data}")
+            # Handle case where session doesn't exist (0 rows)
+            if not response.data:
+                print(f"[DEBUG] SessionManager: Session {session_id} not found in database")
+                # Try to create a new session for this session_id
+                print(f"[DEBUG] SessionManager: Auto-creating session {session_id}")
+                success = await self.create_session(session_id)
+                if success:
+                    print(f"[DEBUG] SessionManager: Successfully created new session {session_id}")
+                    return None  # No working image yet for new session
+                else:
+                    print(f"[ERROR] SessionManager: Failed to create session {session_id}")
+                    return None
+            
+            # Handle case where multiple sessions exist (should not happen with unique constraint)
+            if len(response.data) > 1:
+                print(f"[WARNING] SessionManager: Multiple sessions found for {session_id}, using first")
+            
+            session_data = response.data[0]
+            if session_data:
+                print(f"[DEBUG] SessionManager: Query result: {session_data}")
                 
-                expires_at_str = response.data.get("expires_at")
-                current_working_image = response.data.get("current_working_image")
+                expires_at_str = session_data.get("expires_at")
+                current_working_image = session_data.get("current_working_image")
                 
                 if expires_at_str:
                     from datetime import datetime
