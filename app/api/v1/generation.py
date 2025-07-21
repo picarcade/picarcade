@@ -66,7 +66,7 @@ virtual_tryon_service = VirtualTryOnService()
 async def generate_content(
     request: GenerationRequest,
     background_tasks: BackgroundTasks,
-    current_user: Optional[Dict] = Depends(get_current_user)
+    current_user: Optional[Dict] = None  # Make auth optional for now
 ):
     """
     SIMPLIFIED FLOW: Main generation endpoint using CSV-based decision matrix
