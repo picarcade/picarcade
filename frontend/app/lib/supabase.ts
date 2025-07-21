@@ -69,7 +69,16 @@ export const apiHelpers = {
   // Get authorization header for API calls
   async getAuthHeader(): Promise<Record<string, string>> {
     try {
-      // Get session from localStorage (from our custom auth system)
+      // Get session from Supabase
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (!error && session?.access_token) {
+        return {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+      
+      // Fallback: check localStorage for custom auth session
       const storedSession = localStorage.getItem('auth_session')
       if (storedSession) {
         const session = JSON.parse(storedSession)
@@ -81,7 +90,7 @@ export const apiHelpers = {
         }
       }
     } catch (error) {
-      console.warn('Failed to get auth token from localStorage:', error)
+      console.warn('Failed to get auth token:', error)
     }
     
     return {
