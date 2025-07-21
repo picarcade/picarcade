@@ -1,10 +1,11 @@
-# Backend-specific .vercelignore (root level)
-# This applies to the backend Vercel project
+# Frontend-specific .vercelignore (root level)
+# This applies to the frontend Vercel project - EXCLUDE backend files
 
-# Frontend (deploy separately)
-frontend/
-
-# Development files
+# Backend files (deployed on Render, not Vercel)
+app/
+api/
+requirements.txt
+*.py
 __pycache__/
 *.pyc
 *.pyo
@@ -16,25 +17,13 @@ htmlcov/
 venv/
 env/
 .venv/
-.env.local
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Backend configs
+config/
+*.yaml
+*.yml
 
-# Git
-.git/
-.gitignore
-
-# Documentation
-*.md
-docs/
-*.txt
-!api/requirements.txt
-
-# Test files
+# Test files (backend)
 test*
 *test*
 enhanced_test_*
@@ -44,7 +33,7 @@ enhanced_test_*
 .flake8
 .mypy.ini
 
-# Docker (not needed for Vercel backend)
+# Docker files
 Dockerfile*
 .dockerignore
 render.yaml
@@ -53,6 +42,9 @@ render.yaml
 memory/
 sessions/
 
+# Database files
+*.sql
+
 # Large development files
 *.csv
 *.log
@@ -60,4 +52,22 @@ sessions/
 # Example and setup files
 example/
 setup_*.sql
-run_*.sh 
+run_*.sh
+
+# Documentation
+*.md
+docs/
+claude-flow/
+coordination.md
+SPRINT*.md
+RandD.md
+
+# Git
+.git/
+.gitignore
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo 
