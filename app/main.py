@@ -56,6 +56,8 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
+        "https://picarcade.ai",  # Production domain
+        "https://www.picarcade.ai",  # Production domain with www
         "https://picarcade-frontend.vercel.app",  # Your specific frontend
         "https://picarcade-frontend-68ol897kk-jamesskelton-nexefys-projects.vercel.app",  # Latest deployment with auth fix
         "*"  # Allow all origins for testing (remove in production)

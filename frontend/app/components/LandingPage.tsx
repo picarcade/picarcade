@@ -108,7 +108,22 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
 
     try {
       // Use the correct callback URL based on environment
-      const baseUrl = window.location.origin
+      // Prioritize environment variable, then picarcade.ai for production, then current origin
+      const isProduction = process.env.NODE_ENV === 'production'
+      const currentOrigin = window.location.origin
+      const productionUrl = process.env.NEXT_PUBLIC_PRODUCTION_URL
+      
+      let baseUrl = currentOrigin
+      
+      // If we have a production URL set in env, use that
+      if (productionUrl) {
+        baseUrl = productionUrl
+      } 
+      // Otherwise, if we're on the Vercel deployment but should be using picarcade.ai
+      else if (isProduction && currentOrigin.includes('vercel.app')) {
+        baseUrl = 'https://picarcade.ai'
+      }
+      
       const callbackUrl = `${baseUrl}/auth/callback`
       
       console.log('Starting Google OAuth with callback:', callbackUrl)
