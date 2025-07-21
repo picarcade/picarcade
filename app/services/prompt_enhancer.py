@@ -167,27 +167,21 @@ REQUIREMENTS:
 Return ONLY the enhanced prompt, nothing else."""
 
     async def _call_claude(self, prompt: str) -> str:
-        """Call Claude through Replicate"""
+        """Call Claude through Replicate (using correct API format)"""
         
         def sync_call():
             try:
-                output = replicate.run(
+                result_text = ""
+                for event in replicate.stream(
                     self.model,
                     input={
-                        "prompt": prompt,
-                        "max_tokens": 100,
-                        "temperature": 0.3  # Lower temperature for more consistent enhancements
+                        "prompt": prompt
                     }
-                )
+                ):
+                    result_text += str(event)
                 
-                # Handle different response formats
-                if isinstance(output, list):
-                    result = "".join(output).strip()
-                else:
-                    result = str(output).strip()
-                    
                 # Clean up common Claude response patterns
-                result = result.replace('"', '').strip()
+                result = result_text.strip().replace('"', '').strip()
                 
                 return result
                 

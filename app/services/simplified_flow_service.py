@@ -160,7 +160,7 @@ class SimplifiedFlowService:
         
         try:
             # Sprint 3: Check rate limits before processing
-            estimated_cost = 0.02  # Claude 4 Sonnet cost estimate
+            estimated_cost = 0.03  # Claude 4 Sonnet cost estimate (slightly higher than 3.7)
             
             try:
                 allowed, rate_limit_info = await check_all_rate_limits(
@@ -248,17 +248,54 @@ class SimplifiedFlowService:
             circuit_breaker_state = "unknown"
             used_fallback = False
             
-            # TEMPORARY: Skip Claude classification due to 403 errors - use fallback logic directly
-            logger.info(f"Using fallback classification for user {user_id} (Claude temporarily disabled)")
-            circuit_breaker_state = "bypassed"
-            used_fallback = True
-            
-            # Create fallback result directly
-            result = self._create_fallback_result(
-                user_prompt, active_image, uploaded_image, referenced_image,
-                reason="Claude classification temporarily disabled", total_references=total_references
-            )
-            result.processing_time_ms = int((time.time() - start_time) * 1000)
+            try:
+                if self.circuit_breaker:
+                    circuit_breaker_state = self.circuit_breaker.state.value
+                    prompt_type, enhanced_prompt, reasoning = await self.circuit_breaker.call(
+                        self._classify_and_enhance,
+                        user_prompt, active_image, uploaded_image, referenced_image, context
+                    )
+                else:
+                    prompt_type, enhanced_prompt, reasoning = await self._classify_and_enhance(
+                        user_prompt, active_image, uploaded_image, referenced_image, context
+                    )
+                
+                # Map to model based on CSV (with special rule for 2+ references)
+                model_to_use = self._get_model_for_type(prompt_type, total_references)
+                
+                # Create successful result
+                result = SimplifiedFlowResult(
+                    prompt_type=PromptType(prompt_type),
+                    enhanced_prompt=enhanced_prompt,
+                    model_to_use=model_to_use,
+                    original_prompt=user_prompt,
+                    reasoning=reasoning,
+                    active_image=active_image,
+                    uploaded_image=uploaded_image,
+                    referenced_image=referenced_image,
+                    cache_hit=False,
+                    processing_time_ms=int((time.time() - start_time) * 1000)
+                )
+                
+                # Cache successful result
+                if self.cache:
+                    try:
+                        cache_data = self._result_to_cache_data(result)
+                        await self.cache.set(cache_key, cache_data, ttl=self.cache_ttl)
+                    except Exception as e:
+                        logger.warning(f"Cache set failed: {e}")
+                
+            except (CircuitBreakerOpenError, Exception) as e:
+                logger.warning(f"AI classification failed for user {user_id}: {e}")
+                circuit_breaker_state = self.circuit_breaker.state.value if self.circuit_breaker else "unknown"
+                used_fallback = True
+                
+                # Create fallback result
+                result = self._create_fallback_result(
+                    user_prompt, active_image, uploaded_image, referenced_image,
+                    reason=str(e), total_references=total_references
+                )
+                result.processing_time_ms = int((time.time() - start_time) * 1000)
             
             # Log classification
             await self._log_classification(
@@ -524,7 +561,7 @@ Respond with ONLY valid JSON and no additional text:
 
 IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, explanations, or text after the JSON."""
 
-        # Call Claude via Replicate
+        # Call Claude via Replicate (using correct API format)
         def sync_call():
             try:
                 result_text = ""
@@ -532,8 +569,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     self.model,
                     input={
                         "prompt": classification_prompt,
-                        "max_tokens": 1024,  # Claude 4 Sonnet requires minimum 1024 tokens
-                        "temperature": 0.2  # Low temperature for consistent classification
+                        "system_prompt": "You are an AI assistant that classifies user intents and enhances prompts based on specific rules. Always return valid JSON."
                     }
                 ):
                     result_text += str(event)
