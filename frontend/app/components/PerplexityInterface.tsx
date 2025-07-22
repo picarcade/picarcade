@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera, Send } from 'lucide-react';
-import { generateContent, uploadImage } from '../lib/api';
-import type { GenerationResponse, UploadResponse, HistoryItem } from '../types';
+import { generateContent, uploadImage, getUserReferences } from '../lib/api';
+import type { GenerationResponse, UploadResponse, HistoryItem, Reference, ReferenceImage } from '../types';
 import GenerationHistory from './GenerationHistory';
 import ReferencesPanel from './ReferencesPanel';
 import TagImageModal from './TagImageModal';
 import { AuthModal } from './AuthModal';
 import { useAuth } from './AuthProvider';
 import { getOrCreateUserId } from '../lib/userUtils';
+import ReferenceInput from './ReferenceInput';
 
 const PerplexityInterface = () => {
   const { user, session, loading, signOut } = useAuth();
@@ -34,6 +35,44 @@ const PerplexityInterface = () => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Function to extract and resolve @ references from prompt
+  const extractReferences = async (prompt: string): Promise<ReferenceImage[]> => {
+    const mentionRegex = /@(\w+)/g;
+    const mentions: string[] = [];
+    let match;
+
+    while ((match = mentionRegex.exec(prompt)) !== null) {
+      mentions.push(match[1]);
+    }
+
+    if (mentions.length === 0) {
+      return [];
+    }
+
+    try {
+      // Get all user references
+      const allReferences = await getUserReferences(userId);
+      const referenceMap = new Map(allReferences.map(ref => [ref.tag, ref]));
+
+      // Resolve mentions to reference images
+      const referenceImages: ReferenceImage[] = [];
+      for (const mention of mentions) {
+        const reference = referenceMap.get(mention);
+        if (reference) {
+          referenceImages.push({
+            uri: reference.image_url,
+            tag: mention
+          });
+        }
+      }
+
+      return referenceImages;
+    } catch (error) {
+      console.error('Failed to resolve references:', error);
+      return [];
+    }
+  };
 
   // Check camera availability on component mount
   useEffect(() => {
@@ -84,12 +123,18 @@ const PerplexityInterface = () => {
 
     try {
       console.log(`[DEBUG Frontend] About to generate with session_id: ${sessionId}`);
+      
+      // Extract reference images from @ mentions in the prompt
+      const referenceImages = await extractReferences(inputValue.trim());
+      console.log(`[DEBUG Frontend] Found ${referenceImages.length} reference images:`, referenceImages);
+      
       const response = await generateContent({
         prompt: inputValue.trim(),
         user_id: userId,
         session_id: sessionId || undefined, // Send session ID for conversational continuity
         quality_priority: 'balanced',
-        uploaded_images: uploadedImages.map(img => img.public_url)
+        uploaded_images: uploadedImages.map(img => img.public_url),
+        reference_images: referenceImages
       });
 
       setResult(response);
@@ -484,13 +529,13 @@ const PerplexityInterface = () => {
               </div>
 
               {/* Input Field */}
-              <input
-                type="text"
+              <ReferenceInput
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={setInputValue}
                 onKeyPress={handleKeyPress}
                 placeholder="Let's make something amazing..."
                 disabled={isGenerating}
+                userId={userId}
                 className="flex-1 bg-transparent text-white placeholder-gray-400 text-lg outline-none disabled:opacity-50"
               />
 
