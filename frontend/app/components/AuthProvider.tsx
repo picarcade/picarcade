@@ -10,6 +10,7 @@ interface AuthContextType {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<{ error: Error | null }>
+  signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
 }
@@ -45,15 +46,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔔 Auth state change:', { 
+        event, 
+        hasSession: !!session, 
+        userEmail: session?.user?.email,
+        sessionId: session?.access_token?.substring(0, 10) + '...' || 'none'
+      })
+      
       setLoading(false)
       setSession(session)
       setUser(session?.user ?? null)
 
       if (event === 'SIGNED_IN' && session) {
-        console.log('User signed in:', session.user.email)
+        console.log('✅ User signed in via AuthProvider:', session.user.email)
       }
       if (event === 'SIGNED_OUT') {
-        console.log('User signed out')
+        console.log('🚪 User signed out via AuthProvider')
       }
     })
 
@@ -95,6 +103,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: null }
     } catch (error) {
       console.error('Sign up error:', error)
+      return { error: error as Error }
+    }
+  }
+
+  const signInWithMagicLink = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`, // Adjust redirect URL as needed
+        },
+      })
+
+      if (error) {
+        return { error: error as Error }
+      }
+
+      return { error: null }
+    } catch (error) {
+      console.error('Magic link sign in error:', error)
       return { error: error as Error }
     }
   }
@@ -166,6 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signIn,
     signUp,
+    signInWithMagicLink,
     signOut,
     refreshSession
   }

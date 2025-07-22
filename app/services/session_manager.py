@@ -103,6 +103,10 @@ class SupabaseSessionManager:
         """Get user information from JWT access token - Updated for new Supabase API keys"""
         try:
             print(f"[DEBUG AUTH] Starting token validation for token: {access_token[:50]}...")
+            print(f"[DEBUG AUTH] Token type check:")
+            print(f"[DEBUG AUTH]   Length: {len(access_token)}")
+            print(f"[DEBUG AUTH]   Starts with 'ey': {access_token.startswith('ey')}")
+            print(f"[DEBUG AUTH]   Contains dots: {access_token.count('.')}")
             
             # Method 1: Use get_user() directly with JWT token (FIXED)
             try:
@@ -113,22 +117,28 @@ class SupabaseSessionManager:
                 print(f"[DEBUG AUTH] Creating client with URL: {settings.supabase_url[:50]}...")
                 print(f"[DEBUG AUTH] Using key: {settings.supabase_key[:20]}...")
                 
+                from supabase.client import ClientOptions
+                
                 user_supabase = create_client(
                     settings.supabase_url,
                     settings.supabase_key,  # Use anon key for user operations
-                    options={
-                        "auth": {
-                            "autoRefreshToken": False,
-                            "persistSession": False
-                        }
-                    }
+                    options=ClientOptions(
+                        auto_refresh_token=False,
+                        persist_session=False
+                    )
                 )
                 
                 print(f"[DEBUG AUTH] Getting user directly with JWT token...")
                 # Use get_user() directly with the JWT token instead of set_session()
                 user_response = user_supabase.auth.get_user(jwt=access_token)
                 
-                print(f"[DEBUG AUTH] User response: {user_response}")
+                print(f"[DEBUG AUTH] User response type: {type(user_response)}")
+                print(f"[DEBUG AUTH] Has user: {hasattr(user_response, 'user') and user_response.user is not None}")
+                
+                if hasattr(user_response, 'user') and user_response.user:
+                    print(f"[DEBUG AUTH] User object type: {type(user_response.user)}")
+                    print(f"[DEBUG AUTH] User ID: {getattr(user_response.user, 'id', 'NO_ID')}")
+                    print(f"[DEBUG AUTH] User email: {getattr(user_response.user, 'email', 'NO_EMAIL')}")
                 
                 if user_response and user_response.user:
                     print(f"[DEBUG AUTH] ✅ User validated via Method 1: {user_response.user.id}")
@@ -138,6 +148,11 @@ class SupabaseSessionManager:
                     
             except Exception as e:
                 print(f"[DEBUG AUTH] ❌ Method 1 failed: {type(e).__name__}: {e}")
+                import traceback
+                print(f"[DEBUG AUTH] Full traceback: {traceback.format_exc()}")
+                
+                # Continue to Method 2 if Method 1 fails
+                pass
             
             # Method 2: Try direct JWT decoding and validation (fallback)
             try:

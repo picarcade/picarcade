@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_str: str = "/api/v1"
     
+    # Frontend URL for magic link redirects
+    frontend_url: str = "http://localhost:3000"  # Override in production
+    
     # Supabase - Updated for new API key system (July 2025)
     supabase_url: str
     supabase_key: str  # Can be legacy anon key or new publishable key (sb_publishable_...)

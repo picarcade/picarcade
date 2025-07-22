@@ -212,3 +212,88 @@ async def validate_token(current_user: Dict = Depends(get_current_user)):
         "user": current_user,
         "message": "Token is valid"
     } 
+
+class MagicLinkRequest(BaseModel):
+    email: EmailStr
+
+class MagicLinkVerifyRequest(BaseModel):
+    token_hash: str
+    type: str = "email"
+
+@router.post("/send-magic-link")
+async def send_magic_link(request: MagicLinkRequest):
+    """
+    Send magic link to user's email for passwordless authentication
+    Creates user account if it doesn't exist
+    """
+    try:
+        # Get frontend URL from environment or default
+        from app.core.config import settings
+        frontend_url = getattr(settings, 'frontend_url', 'http://localhost:3000')
+        
+        # Use Supabase's built-in magic link functionality
+        response = session_manager.supabase.auth.sign_in_with_otp({
+            "email": request.email,
+            "options": {
+                "should_create_user": True,  # Auto-create users
+                "email_redirect_to": f"{frontend_url}/auth/callback"
+            }
+        })
+        
+        return {
+            "message": "Magic link sent! Check your email to sign in.",
+            "email": request.email
+        }
+        
+    except Exception as e:
+        print(f"[DEBUG] Magic link send error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to send magic link: {str(e)}"
+        )
+
+@router.post("/verify-magic-link")
+async def verify_magic_link(request: MagicLinkVerifyRequest):
+    """
+    Verify magic link token and create session
+    """
+    try:
+        # Verify the magic link token
+        response = session_manager.supabase.auth.verify_otp({
+            "token_hash": request.token_hash,
+            "type": request.type
+        })
+        
+        if not response.user:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired magic link"
+            )
+        
+        # Create session in our system
+        if response.session:
+            session_id = response.session.access_token
+            user_id = response.user.id
+            
+            await session_manager.create_session(
+                session_id=session_id,
+                user_id=user_id,
+                metadata={"magic_link_login": True, "login_time": "now"}
+            )
+        
+        return {
+            "user": response.user.__dict__ if hasattr(response.user, '__dict__') else str(response.user),
+            "session": response.session.__dict__ if response.session and hasattr(response.session, '__dict__') else None,
+            "access_token": response.session.access_token if response.session else "",
+            "refresh_token": response.session.refresh_token if response.session else "",
+            "message": "Magic link verified successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[DEBUG] Magic link verify error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid or expired magic link: {str(e)}"
+        ) 

@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from './AuthProvider'
-import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Loader2, Mail } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSearchParams, useRouter } from 'next/navigation'
 
@@ -11,17 +11,13 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onAuthSuccess }: LandingPageProps) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
+  const [magicLinkSent, setMagicLinkSent] = useState(false)
   
-  const { signIn, signUp } = useAuth()
+  const { signInWithMagicLink } = useAuth()
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -82,43 +78,23 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
     return () => subscription.unsubscribe()
   }, [searchParams, router, onAuthSuccess])
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setIsLoading(true)
+    setMagicLinkLoading(true)
 
     try {
-      if (mode === 'signup') {
-        if (password !== confirmPassword) {
-          setError('Passwords do not match')
-          return
-        }
-        
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters')
-          return
-        }
-
-        const { error } = await signUp(email, password)
-        if (error) {
-          setError(error.message || 'Failed to create account')
-        } else {
-          setError('')
-          onAuthSuccess?.()
-        }
+      const { error } = await signInWithMagicLink(email)
+      if (error) {
+        setError(error.message || 'Failed to send magic link')
       } else {
-        const { error } = await signIn(email, password)
-        if (error) {
-          setError(error.message || 'Failed to sign in')
-        } else {
-          setError('')
-          onAuthSuccess?.()
-        }
+        setError('')
+        setMagicLinkSent(true)
       }
     } catch {
       setError('An unexpected error occurred')
     } finally {
-      setIsLoading(false)
+      setMagicLinkLoading(false)
     }
   }
 
@@ -168,14 +144,7 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
 
   const resetForm = () => {
     setEmail('')
-    setPassword('')
-    setConfirmPassword('')
     setError('')
-  }
-
-  const switchMode = () => {
-    setMode(mode === 'signin' ? 'signup' : 'signin')
-    resetForm()
   }
 
   return (
@@ -209,7 +178,7 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
           <div className="mb-6">
             <button
               onClick={handleGoogleAuth}
-              disabled={googleLoading || isLoading}
+              disabled={googleLoading || magicLinkLoading}
               className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-900 py-3 px-4 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               {googleLoading ? (
@@ -232,112 +201,77 @@ export function LandingPage({ onAuthSuccess }: LandingPageProps) {
               <div className="w-full border-t border-gray-600"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-gray-800/60 text-gray-400">or continue with email</span>
+              <span className="px-4 bg-gray-800/60 text-gray-400">or sign in with email</span>
             </div>
           </div>
 
-          {/* Email Form */}
-          <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors"
-                  placeholder="Enter your email"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-12 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors"
-                  placeholder="Enter your password"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-
-            {mode === 'signup' && (
+          {/* Magic Link Form */}
+          <div className="bg-gray-700/30 rounded-lg p-6">
+            <form onSubmit={handleMagicLink} className="space-y-4">
               <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
-                  Confirm Password
+                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+                  Email Address
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full pl-10 pr-12 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors"
-                    placeholder="Confirm your password"
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors"
+                    placeholder="Enter your email for magic link"
                     required
-                    minLength={6}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                  >
-                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
                 </div>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={isLoading || googleLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                mode === 'signin' ? 'Sign In' : 'Create Account'
-              )}
-            </button>
-          </form>
-
-          {/* Mode Switch */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={switchMode}
-              className="text-gray-400 hover:text-white transition-colors text-sm"
-            >
-              {mode === 'signin' 
-                ? "Don't have an account? Sign up" 
-                : "Already have an account? Sign in"
-              }
-            </button>
+              <button
+                type="submit"
+                disabled={magicLinkLoading}
+                className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-900 py-3 px-4 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {magicLinkLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Sending magic link...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-5 h-5" />
+                    Send Magic Link
+                  </>
+                )}
+              </button>
+            </form>
           </div>
+
+          {/* Magic Link Sent Message */}
+          {magicLinkSent && (
+            <div className="mt-6 text-center">
+              <p className="text-gray-400 text-sm">
+                We&apos;ve sent a magic link to <span className="text-white">{email}</span>
+              </p>
+              <p className="text-gray-500 text-xs mt-1">
+                Click the link in your email to sign in
+              </p>
+            </div>
+          )}
+
+          {/* Reset Form Button */}
+          {magicLinkSent && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => {
+                  setMagicLinkSent(false)
+                  resetForm()
+                }}
+                className="text-gray-400 hover:text-white transition-colors text-sm underline"
+              >
+                Try a different email
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -24,6 +24,11 @@ class ReplicateGenerator(BaseGenerator):
             replicate.api_token = settings.replicate_api_token
             os.environ["REPLICATE_API_TOKEN"] = settings.replicate_api_token
             print(f"Replicate API Key loaded in generator: {settings.replicate_api_token}")
+            
+            # Debug: Verify the token is actually set
+            print(f"[DEBUG REPLICATE] replicate.api_token after setting: {replicate.api_token}")
+            print(f"[DEBUG REPLICATE] os.environ REPLICATE_API_TOKEN: {os.environ.get('REPLICATE_API_TOKEN', 'NOT_SET')}")
+            print(f"[DEBUG REPLICATE] settings.replicate_api_token: {settings.replicate_api_token}")
         else:
             print("WARNING: No Replicate API token found in settings")
     
@@ -653,6 +658,12 @@ class ReplicateGenerator(BaseGenerator):
         def sync_call():
             model_version = "black-forest-labs/flux-1.1-pro" if parameters.get("model") == "flux-1.1-pro" else "black-forest-labs/flux-1.1-pro-ultra"
             
+            # Debug: Check token status right before API call
+            print(f"[DEBUG REPLICATE] About to make API call:")
+            print(f"[DEBUG REPLICATE]   replicate.api_token: {replicate.api_token}")
+            print(f"[DEBUG REPLICATE]   os.environ REPLICATE_API_TOKEN: {os.environ.get('REPLICATE_API_TOKEN', 'NOT_SET')}")
+            print(f"[DEBUG REPLICATE]   model_version: {model_version}")
+            
             # Some Flux models only accept jpg/png, not webp
             output_format = parameters.get("output_format", "jpg")
             if output_format not in ["jpg", "png"]:
@@ -666,7 +677,20 @@ class ReplicateGenerator(BaseGenerator):
                 "safety_tolerance": parameters.get("safety_tolerance", 2),
                 "prompt_upsampling": parameters.get("prompt_upsampling", True)
             }
-            output = replicate.run(model_version, input=inputs)
+            
+            print(f"[DEBUG REPLICATE] Making replicate.run() call with inputs: {inputs}")
+            
+            try:
+                output = replicate.run(model_version, input=inputs)
+                print(f"[DEBUG REPLICATE] ✅ API call successful, output type: {type(output)}")
+            except Exception as e:
+                print(f"[DEBUG REPLICATE] ❌ API call failed:")
+                print(f"[DEBUG REPLICATE]   Error type: {type(e).__name__}")
+                print(f"[DEBUG REPLICATE]   Error message: {str(e)}")
+                print(f"[DEBUG REPLICATE]   Token at time of error: {replicate.api_token}")
+                print(f"[DEBUG REPLICATE]   ENV token at time of error: {os.environ.get('REPLICATE_API_TOKEN', 'NOT_SET')}")
+                raise  # Re-raise the original error
+            
             return {
                 "output_url": self._extract_url(output) if output else None,
                 "metadata": {"model_version": model_version, "inputs": inputs}
