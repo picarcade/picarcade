@@ -124,17 +124,11 @@ class RunwayGenerator(BaseGenerator):
         try:
             # VERY OBVIOUS DEBUG LOG TO CONFIRM CODE RELOAD
             print("🚨🚨🚨 RUNWAY GENERATOR CALLED - CODE RELOADED! 🚨🚨🚨")
-            print(f"*** RUNWAY GENERATOR: Starting generation with type='{parameters.get('type')}', is_face_swap={parameters.get('is_face_swap', False)} ***")
+            print(f"*** RUNWAY GENERATOR: Starting generation with type='{parameters.get('type')}' ***")
             logger.info("🚨🚨🚨 RUNWAY GENERATOR CALLED - CODE RELOADED! 🚨🚨🚨")
-            logger.info(f"*** RUNWAY GENERATOR: Starting generation with type='{parameters.get('type')}', is_face_swap={parameters.get('is_face_swap', False)} ***")
+            logger.info(f"*** RUNWAY GENERATOR: Starting generation with type='{parameters.get('type')}' ***")
             
-            if parameters.get("is_face_swap", False) and parameters.get("type") == "text_to_image_with_references":
-                logger.info("*** RUNWAY GENERATOR: Taking face swap with references path ***")
-                result = await self._generate_image_with_references(prompt, parameters)
-            elif parameters.get("is_face_swap", False):
-                logger.info("*** RUNWAY GENERATOR: Taking face swap path ***")
-                result = await self._generate_face_swap(prompt, parameters)
-            elif parameters.get("type") == "text_to_image_with_references":
+            if parameters.get("type") == "text_to_image_with_references":
                 logger.info("*** RUNWAY GENERATOR: Taking text_to_image_with_references path ***")
                 result = await self._generate_image_with_references(prompt, parameters)
             elif parameters.get("type") == "video":
@@ -390,31 +384,9 @@ class RunwayGenerator(BaseGenerator):
         reference_images = validated_references
         
         # Optimize prompt for different styling scenarios
-        is_face_swap = parameters.get("is_face_swap", False)
         is_hair_styling = parameters.get("enhanced_workflow_type") == "hair_styling"
         
-        if is_face_swap and len(reference_images) >= 2:
-            face_source_tag = None
-            body_target_tag = None
-            
-            for ref in reference_images:
-                if "skelton" in ref["tag"] or "face" in ref["tag"]:
-                    face_source_tag = ref["tag"]
-                elif "man_" in ref["tag"] or "body" in ref["tag"]:
-                    body_target_tag = ref["tag"]
-            
-            if not face_source_tag or not body_target_tag:
-                body_target_tag = reference_images[0]["tag"]
-                face_source_tag = reference_images[1]["tag"]
-            
-            optimized_prompt = f"Replace the face of @{body_target_tag} with the face of @{face_source_tag}"
-            logger.info(f"Face swap optimization: '{prompt}' -> '{optimized_prompt}'")
-            prompt = optimized_prompt
-            
-            # Update parameters so the enhanced prompt gets logged correctly
-            parameters["prompt"] = optimized_prompt
-            
-        elif is_hair_styling and len(reference_images) >= 2:
+        if is_hair_styling and len(reference_images) >= 2:
             # Hair styling optimization - be very specific about only changing hair
             working_tag = None
             hair_ref_tag = None

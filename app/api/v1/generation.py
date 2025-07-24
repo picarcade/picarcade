@@ -325,9 +325,8 @@ async def generate_content(
         # Using simplified flow data instead of enhanced_intent
         is_reference_styling = flow_result.prompt_type.value == "EDIT_IMAGE_REF"
         
-        # Determine if this is face swap by checking flow reasoning
+        # Get flow reasoning for other checks
         flow_reasoning = flow_result.reasoning if flow_result else ''
-        is_face_swap = is_reference_styling and ("face" in flow_reasoning.lower() and ("replace" in flow_reasoning.lower() or "swap" in flow_reasoning.lower()))
         
         is_reference_scenario = (
             current_working_image and 
@@ -360,7 +359,6 @@ async def generate_content(
             "has_uploaded_images": bool(request.uploaded_images and len(request.uploaded_images) > 0),
             "has_prompt_references": has_prompt_references,
             "is_reference_styling": is_reference_styling,
-            "is_face_swap": is_face_swap,
             "is_reference_scenario": is_reference_scenario,
             "uses_runway_references": uses_runway_references
         })
@@ -419,27 +417,7 @@ async def generate_content(
                 parameters["reference_images"] = runway_reference_images
                 parameters["type"] = "text_to_image_with_references"
         
-        if is_face_swap and current_working_image and request.uploaded_images:
-            # Face swap with working image: Create reference from uploaded image and use Runway
-            api_logger.debug("Face swap detected", extra={
-                "base_image": current_working_image,
-                "source_image": request.uploaded_images[0]
-            })
-            
-            # Set parameters to trigger face swap processing
-            parameters["face_swap_base_image"] = current_working_image  # Base person
-            parameters["face_swap_source_image"] = request.uploaded_images[0]  # Face to swap
-            parameters["is_face_swap"] = True
-            parameters["type"] = "text_to_image_with_references"  # Force enhanced routing
-            image_source = f"face_swap:base={current_working_image},source={request.uploaded_images[0]}"
-            
-        elif is_face_swap and not current_working_image and request.uploaded_images:
-            # Face swap without working image: User uploaded the base image, needs a reference face
-            api_logger.debug("Face swap without working image", extra={"base_image": request.uploaded_images[0]})
-            
-            # For now, just use the uploaded image as base and rely on prompt engineering
-            # In the future, we could prompt user to provide a second image
-            parameters["image"] = request.uploaded_images[0]
+
             parameters["uploaded_image"] = request.uploaded_images[0]
             image_source = f"uploaded_image:{request.uploaded_images[0]}"
             api_logger.debug("Using uploaded image as base for face modification", extra={"image": request.uploaded_images[0]})
@@ -504,11 +482,10 @@ async def generate_content(
                     "session_id": request.session_id
                 })
         
-        # Choose generator based on model - FORCE Runway if references present OR face swap
+        # Choose generator based on model - FORCE Runway if references present
         api_logger.debug("Selecting generator", extra={
             "model": selected_model,
-            "has_references": bool(request.reference_images),
-            "is_face_swap": parameters.get('is_face_swap', False)
+            "has_references": bool(request.reference_images)
         })
         
         # NEW: Apply updated video routing logic based on input image presence and audio requirements
@@ -552,7 +529,6 @@ async def generate_content(
         api_logger.debug("Generator routing decision", extra={
             "selected_model": selected_model,
             "configured_generator": configured_generator,
-            "is_face_swap": parameters.get("is_face_swap", False),
             "uses_runway_references": uses_runway_references,
             "has_input_image": has_input_image,
             "is_video_generation": is_video_generation,
@@ -560,11 +536,7 @@ async def generate_content(
             "prompt_type": flow_result.prompt_type.value
         })
         
-        if parameters.get("is_face_swap", False):
-            api_logger.debug("Using FRESH RunwayGenerator for face swap")
-            generator = get_runway_generator()  # Create fresh instance!
-            # Face swap will be handled specially in the generator
-        elif uses_runway_references:
+        if uses_runway_references:
             api_logger.debug("Using FRESH RunwayGenerator due to runway references workflow")
             generator = get_runway_generator()  # Create fresh instance!
         elif configured_generator == "runway" or "runway" in selected_model or selected_model in ["gen3a_turbo", "gen4_turbo"]:
