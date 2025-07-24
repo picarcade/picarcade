@@ -12,7 +12,7 @@ import { getOrCreateUserId } from '../lib/userUtils';
 import ReferenceInput from './ReferenceInput';
 
 const PerplexityInterface = () => {
-  const { user, session, loading, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResponse | null>(null);
@@ -21,8 +21,13 @@ const PerplexityInterface = () => {
   const [uploadedImages, setUploadedImages] = useState<UploadResponse[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null); // Track session for conversational editing
-  // Generate a persistent user ID that survives page refreshes
-  const [userId] = useState(() => getOrCreateUserId());
+  // Use authenticated Supabase user ID when available, fallback to localStorage for unauthenticated users
+  const [userId] = useState(() => {
+    if (user?.id) {
+      return user.id; // Use Supabase authenticated user ID for cross-device sync
+    }
+    return getOrCreateUserId(); // Fallback for unauthenticated users
+  });
   const [showHistory, setShowHistory] = useState(false);
   const [showReferences, setShowReferences] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
@@ -40,6 +45,28 @@ const PerplexityInterface = () => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Load tagged images state from Supabase on component mount
+  const loadTaggedImagesState = async () => {
+    try {
+      const references = await getUserReferences(userId);
+      const taggedImageUrls = new Set(references.map(ref => ref.image_url));
+      const imageToTagMap = new Map(references.map(ref => [ref.image_url, ref.tag]));
+      
+      setTaggedImages(taggedImageUrls);
+      setImageTagMap(imageToTagMap);
+      console.log(`[Sync] Loaded ${references.length} tagged images from database`);
+    } catch (error) {
+      console.error('Failed to load tagged images state:', error);
+    }
+  };
+
+  // Load tagged images state when userId changes (including on mount)
+  useEffect(() => {
+    if (userId) {
+      loadTaggedImagesState();
+    }
+  }, [userId]);
 
   // Function to extract and resolve @ references from prompt
   const extractReferences = async (prompt: string): Promise<ReferenceImage[]> => {
@@ -180,7 +207,7 @@ const PerplexityInterface = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      handleSubmit(e as React.FormEvent);
     }
   };
 
@@ -343,7 +370,6 @@ const PerplexityInterface = () => {
   const handleReferenceSelect = (tag: string) => {
     // Add the @tag to the input
     setInputValue(prev => {
-      const cursorPos = prev.length; // Add to end for now
       return prev + (prev ? ' ' : '') + tag;
     });
     setShowReferences(false);
@@ -355,10 +381,13 @@ const PerplexityInterface = () => {
   };
 
   const handleImageTagged = (tag: string) => {
-    // Mark the image as tagged and store the tag mapping
+    // Mark the image as tagged and store the tag mapping locally for immediate UI update
     setTaggedImages(prev => new Set(prev).add(imageToTag));
     setImageTagMap(prev => new Map(prev).set(imageToTag, tag));
-    console.log(`Image tagged as @${tag}`, 'Image URL:', imageToTag, 'Tagged images:', taggedImages);
+    console.log(`Image tagged as @${tag}`, 'Image URL:', imageToTag);
+    
+    // Refresh the tagged state from database to ensure sync across devices
+    loadTaggedImagesState();
   };
 
   const handleImageMaximize = (imageUrl: string) => {
