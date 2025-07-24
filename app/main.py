@@ -23,7 +23,7 @@ logger.info("API keys loaded: %s",
 )
 
 # Import API routes after environment is loaded
-from app.api.v1 import generation, uploads, references, auth
+from app.api.v1 import generation, uploads, references, auth, subscriptions
 from app.api import health
 from app.api.simplified_endpoints import router as simplified_router
 
@@ -33,6 +33,15 @@ async def lifespan(app: FastAPI):
     # Startup
     await db_manager.create_tables()
     await session_manager.create_session_tables()
+    
+    # Initialize subscription services
+    from app.services.subscription_service import subscription_service
+    from app.services.model_routing_service import model_routing_service
+    
+    # Load routing rules cache
+    await model_routing_service.get_routing_rules(refresh_cache=True)
+    logger.info("Subscription system initialized")
+    
     yield
     # Shutdown (if needed)
 
@@ -66,6 +75,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add tier-based permission middleware
+from app.middleware.tier_permissions import add_tier_permission_middleware
+# Note: Middleware will be added during startup in lifespan function
 
 # Add validation error handler for better 422 debugging
 @app.exception_handler(RequestValidationError)
@@ -103,6 +116,12 @@ app.include_router(
     references.router,
     prefix=f"{settings.api_v1_str}/references",
     tags=["references"]
+)
+
+app.include_router(
+    subscriptions.router,
+    prefix=f"{settings.api_v1_str}/subscriptions",
+    tags=["subscriptions"]
 )
 
 app.include_router(

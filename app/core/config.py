@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     replicate_api_token: Optional[str] = None
     google_api_key: Optional[str] = None
     
+    # Stripe Payment Processing
+    stripe_publishable_key: Optional[str] = None
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    
     # Google Cloud/Vertex AI settings
     google_cloud_project: Optional[str] = None
     google_cloud_location: str = "us-central1"
