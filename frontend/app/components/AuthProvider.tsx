@@ -32,6 +32,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (session) {
           setSession(session)
           setUser(session.user)
+          // Store access token for API calls
+          if (session.access_token) {
+            localStorage.setItem('access_token', session.access_token)
+            console.log('🔑 Initial access token stored for API calls')
+          }
         }
       } catch (error) {
         console.error('Error getting initial session:', error)
@@ -56,6 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       setSession(session)
       setUser(session?.user ?? null)
+
+      // Store/clear access token for API calls while preserving user ID behavior
+      if (session?.access_token) {
+        localStorage.setItem('access_token', session.access_token)
+        console.log('🔑 Access token stored for API calls')
+      } else {
+        localStorage.removeItem('access_token')
+        console.log('🔑 Access token cleared')
+      }
 
       if (event === 'SIGNED_IN' && session) {
         console.log('✅ User signed in via AuthProvider:', session.user.email)
@@ -146,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // Clear any localStorage items related to auth
         try {
+          localStorage.removeItem('access_token') // Clear our stored access token
           localStorage.removeItem('sb-izfjglgvaqrqaywfniwi-auth-token')
           localStorage.removeItem('supabase.auth.token')
           localStorage.removeItem('auth_session')
@@ -167,6 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // Clear localStorage as fallback
       try {
+        localStorage.removeItem('access_token') // Clear our stored access token
         localStorage.removeItem('sb-izfjglgvaqrqaywfniwi-auth-token')
         localStorage.removeItem('supabase.auth.token')
         localStorage.removeItem('auth_session')

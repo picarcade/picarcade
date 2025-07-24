@@ -1268,7 +1268,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             # Create minimal log data that should work with any schema
             log_data = {
                 "user_id": user_id,
-                "prompt": prompt,
+                "user_prompt": prompt,  # Fixed: database expects "user_prompt" not "prompt"
                 "classified_workflow": result.prompt_type.value,
                 "processing_time_ms": result.processing_time_ms,
                 "used_fallback": used_fallback,
