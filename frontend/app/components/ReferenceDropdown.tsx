@@ -117,7 +117,7 @@ export default function ReferenceDropdown({
   return (
     <div
       ref={dropdownRef}
-      className="fixed z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-48 overflow-y-auto min-w-64"
+      className="absolute z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-48 overflow-y-auto min-w-64"
       style={{
         top: position.top,
         left: position.left,

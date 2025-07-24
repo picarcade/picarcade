@@ -1,9 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import ReferenceDropdown from './ReferenceDropdown'
-import { getUserReferences } from '../lib/api'
-import type { Reference } from '../types'
 
 interface ReferenceInputProps {
   value: string
@@ -33,26 +31,8 @@ export default function ReferenceInput({
   const [searchTerm, setSearchTerm] = useState('')
   const [currentMentionStart, setCurrentMentionStart] = useState(-1)
   const [cursorPosition, setCursorPosition] = useState(0)
-  const [validReferences, setValidReferences] = useState<Set<string>>(new Set())
   
   const inputRef = useRef<HTMLInputElement>(null)
-  const hiddenSpanRef = useRef<HTMLSpanElement>(null)
-
-  // Load all references to validate mentions
-  useEffect(() => {
-    if (userId) {
-      loadValidReferences()
-    }
-  }, [userId])
-
-  const loadValidReferences = async () => {
-    try {
-      const references = await getUserReferences(userId)
-      setValidReferences(new Set(references.map(ref => ref.tag)))
-    } catch (error) {
-      console.error('Failed to load references for validation:', error)
-    }
-  }
 
   // Get cursor position for positioning dropdown
   const getCursorPosition = useCallback(() => {
@@ -60,26 +40,21 @@ export default function ReferenceInput({
     return inputRef.current.selectionStart || 0
   }, [])
 
-  // Calculate dropdown position
-  const calculateDropdownPosition = useCallback((atPosition: number) => {
-    if (!inputRef.current || !hiddenSpanRef.current) {
+  // Calculate dropdown position (relative to the container since using absolute positioning)
+  const calculateDropdownPosition = useCallback(() => {
+    if (!inputRef.current) {
       return { top: 0, left: 0 }
     }
 
     const input = inputRef.current
-    const inputRect = input.getBoundingClientRect()
     
-    // Create a temporary span to measure text width up to the @ symbol
-    const textBeforeAt = value.substring(0, atPosition)
-    hiddenSpanRef.current.textContent = textBeforeAt
-    
-    const textWidth = hiddenSpanRef.current.offsetWidth
-    
+    // Since dropdown is now absolutely positioned relative to the container,
+    // we just need to position it below the input height + padding
     return {
-      top: inputRect.bottom + window.scrollY + 4,
-      left: inputRect.left + window.scrollX + textWidth + 12 // Add padding offset
+      top: input.offsetHeight + 4, // Position below input with 4px gap
+      left: 0, // Align with left edge of container
     }
-  }, [value])
+  }, [])
 
   // Check for @ mention at current cursor position
   const checkForMention = useCallback((text: string, position: number) => {
@@ -134,7 +109,7 @@ export default function ReferenceInput({
       if (mention) {
         setCurrentMentionStart(mention.start)
         setSearchTerm(mention.searchTerm)
-        setDropdownPosition(calculateDropdownPosition(mention.start))
+        setDropdownPosition(calculateDropdownPosition())
         setShowDropdown(true)
       } else {
         setShowDropdown(false)
@@ -199,55 +174,17 @@ export default function ReferenceInput({
     }
   }
 
-  // Add custom styling for @ mentions
+  // Return the base className
   const getStyledClassName = () => {
-    let styledClassName = className || ''
-    
-    // Check if there are valid @ mentions in the text
-    const mentionRegex = /@(\w+)/g
-    let hasValidMentions = false
-    let match
-    
-    while ((match = mentionRegex.exec(value)) !== null) {
-      if (validReferences.has(match[1])) {
-        hasValidMentions = true
-        break
-      }
-    }
-    
-    // Add a CSS class that can be used to style @ mentions
-    if (hasValidMentions) {
-      styledClassName += ' has-references'
-    }
-    
-    return styledClassName
+    return className || ''
   }
 
-  // Count valid references in the text
-  const getValidReferenceCount = () => {
-    const mentionRegex = /@(\w+)/g
-    let count = 0
-    let match
-    
-    while ((match = mentionRegex.exec(value)) !== null) {
-      if (validReferences.has(match[1])) {
-        count++
-      }
-    }
-    
-    return count
-  }
 
-  const validReferenceCount = getValidReferenceCount()
+
+
 
   return (
-    <div className="relative">
-      {/* Hidden span for measuring text width */}
-      <span
-        ref={hiddenSpanRef}
-        className="absolute invisible whitespace-pre text-lg"
-      />
-
+    <div className="relative flex-1">
       {/* Actual input */}
       <input
         ref={inputRef}
@@ -259,19 +196,9 @@ export default function ReferenceInput({
         onClick={handleCursorMove}
         placeholder={placeholder}
         disabled={disabled}
-        className={getStyledClassName()}
+        className={`w-full ${getStyledClassName()}`}
         {...props}
       />
-
-      {/* Reference indicator */}
-      {validReferenceCount > 0 && (
-        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1 pointer-events-none">
-          <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
-          <span className="text-xs text-purple-400 font-medium">
-            {validReferenceCount} ref{validReferenceCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
 
       {/* Reference dropdown */}
       <ReferenceDropdown

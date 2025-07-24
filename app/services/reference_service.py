@@ -386,7 +386,8 @@ class ReferenceService:
                               display_name: Optional[str] = None,
                               description: Optional[str] = None,
                               category: str = "general",
-                              source_type: str = "uploaded") -> Dict[str, Any]:
+                              source_type: str = "uploaded",
+                              thumbnail_url: Optional[str] = None) -> Dict[str, Any]:
         """Create a new reference"""
         db = SupabaseManager()
         
@@ -395,6 +396,7 @@ class ReferenceService:
             'tag': tag,
             'display_name': display_name or tag,
             'image_url': image_url,
+            'thumbnail_url': thumbnail_url,
             'description': description,
             'category': category,
             'source_type': source_type,

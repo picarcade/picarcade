@@ -96,6 +96,130 @@ class SupabaseStorageService:
         except Exception as e:
             print(f"Error uploading image: {e}")
             return False, None, str(e)
+
+    async def upload_image_with_thumbnail(self, 
+                                         file: UploadFile, 
+                                         user_id: str = None,
+                                         resize_max: Optional[int] = 2048,
+                                         thumbnail_size: int = 256) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
+        """
+        Upload an image with automatic thumbnail generation
+        
+        Args:
+            file: The uploaded file
+            user_id: Optional user ID for organizing files
+            resize_max: Maximum dimension for main image resizing
+            thumbnail_size: Maximum dimension for thumbnail (default 256px)
+            
+        Returns:
+            Tuple of (success, file_path, public_url, thumbnail_url)
+        """
+        
+        try:
+            # Generate unique filename
+            file_extension = file.filename.split('.')[-1].lower() if file.filename else 'jpg'
+            unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+            
+            # Create folder structure
+            timestamp = int(time.time())
+            folder_path = f"uploads/{timestamp // 86400}"  # Group by day
+            if user_id:
+                folder_path = f"uploads/{user_id}/{timestamp // 86400}"
+            
+            file_path = f"{folder_path}/{unique_filename}"
+            thumbnail_path = f"{folder_path}/thumbs/{unique_filename}"
+            
+            # Read and process the image
+            content = await file.read()
+            
+            # Validate file type
+            if not self._is_valid_image(content):
+                return False, None, None, "Invalid image format"
+            
+            # Resize main image if needed
+            if resize_max:
+                content = self._resize_image(content, resize_max)
+            
+            # Generate thumbnail
+            thumbnail_content = self._generate_thumbnail(content, thumbnail_size)
+            
+            # Upload main image
+            main_result = self.supabase.storage.from_(self.bucket_name).upload(
+                path=file_path,
+                file=content,
+                file_options={
+                    "content-type": file.content_type or f"image/{file_extension}",
+                    "cache-control": "3600",
+                    "upsert": "true"
+                }
+            )
+            
+            # Upload thumbnail
+            thumb_result = self.supabase.storage.from_(self.bucket_name).upload(
+                path=thumbnail_path,
+                file=thumbnail_content,
+                file_options={
+                    "content-type": "image/jpeg",
+                    "cache-control": "3600",
+                    "upsert": "true"
+                }
+            )
+            
+            if main_result and thumb_result:
+                # Get public URLs
+                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                thumbnail_url = self.supabase.storage.from_(self.bucket_name).get_public_url(thumbnail_path)
+                return True, file_path, public_url, thumbnail_url
+            else:
+                return False, None, None, "Upload failed"
+                
+        except Exception as e:
+            print(f"Error uploading image with thumbnail: {e}")
+            return False, None, None, str(e)
+
+    def _generate_thumbnail(self, content: bytes, max_dimension: int) -> bytes:
+        """Generate thumbnail from image content"""
+        try:
+            with Image.open(io.BytesIO(content)) as img:
+                # Convert to RGB if necessary (for JPEG)
+                if img.mode in ('RGBA', 'P'):
+                    # Create white background for transparent images
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])
+                    else:
+                        background.paste(img)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Calculate thumbnail dimensions maintaining aspect ratio
+                width, height = img.size
+                if width <= max_dimension and height <= max_dimension:
+                    # Image is already small enough
+                    output = io.BytesIO()
+                    img.save(output, format='JPEG', quality=85, optimize=True)
+                    return output.getvalue()
+                
+                # Resize maintaining aspect ratio
+                if width > height:
+                    new_width = max_dimension
+                    new_height = int(height * max_dimension / width)
+                else:
+                    new_height = max_dimension
+                    new_width = int(width * max_dimension / height)
+                
+                thumbnail = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                # Save as JPEG with high quality for thumbnails
+                output = io.BytesIO()
+                thumbnail.save(output, format='JPEG', quality=85, optimize=True)
+                return output.getvalue()
+                
+        except Exception as e:
+            print(f"Error generating thumbnail: {e}")
+            # Return original content as fallback
+            return content
     
     def _is_valid_image(self, content: bytes) -> bool:
         """Check if the file content is a valid image"""

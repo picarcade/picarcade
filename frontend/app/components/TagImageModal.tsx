@@ -11,10 +11,11 @@ interface TagImageModalProps {
   imageUrl: string
   userId: string
   onTagged?: (tag: string) => void
+  initialTag?: string
 }
 
-export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTagged }: TagImageModalProps) {
-  const [tagName, setTagName] = useState('')
+export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTagged, initialTag }: TagImageModalProps) {
+  const [tagName, setTagName] = useState(initialTag || '')
   const [isLoading, setIsLoading] = useState(false)
   const [existingTags, setExistingTags] = useState<string[]>([])
 
@@ -23,6 +24,10 @@ export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTag
       loadExistingTags()
     }
   }, [isOpen, userId])
+
+  useEffect(() => {
+    setTagName(initialTag || '')
+  }, [initialTag])
 
   const loadExistingTags = async () => {
     try {
@@ -82,9 +87,6 @@ export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTag
       // Reset form
       setTagName('')
       onClose()
-      
-      // Show success message
-      alert(`Image tagged as @${uniqueTag}`)
     } catch (error) {
       console.error('Failed to tag image:', error)
       alert('Failed to tag image. Please try again.')
@@ -107,7 +109,7 @@ export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTag
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2">
             <Tag className="w-5 h-5 text-purple-600" />
-            <h2 className="text-lg font-semibold">Tag Image</h2>
+            <h2 className="text-lg font-semibold">{initialTag ? 'Edit Tag' : 'Tag Image'}</h2>
           </div>
           <button
             onClick={handleClose}
@@ -181,7 +183,7 @@ export default function TagImageModal({ isOpen, onClose, imageUrl, userId, onTag
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                Tag Image
+                {initialTag ? 'Update Tag' : 'Tag Image'}
               </>
             )}
           </button>

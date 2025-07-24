@@ -73,7 +73,7 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <button
                     onClick={() => {/* TODO: Implement tag functionality */}}
-                    className="p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-lg"
+                    className="p-2 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors shadow-lg"
                     title="Tag this image"
                   >
                     <Tag className="w-4 h-4" />

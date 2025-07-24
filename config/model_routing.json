@@ -90,7 +90,7 @@
       "runway-gen3": {
         "provider": "runway",
         "generator": "runway",
-        "model_id": "gen3a_turbo",
+        "model_id": "gen4_turbo",
         "default_parameters": {
           "duration": 5,
           "ratio": "1280:768"

@@ -33,7 +33,7 @@ model_routing:
         generator: "replicate"
         # No fallback - VEO-3-Fast is the only option for audio
       IMAGE_TO_VIDEO:
-        model: "gen3a_turbo"
+        model: "gen4_turbo"
         generator: "runway"
         # No fallback - Runway is primary for image-to-video (bypass Hailuo-02 safety restrictions)
       IMAGE_TO_VIDEO_WITH_AUDIO:
@@ -41,7 +41,7 @@ model_routing:
         generator: "replicate"
         # No fallback - VEO-3-Fast is the only option for audio
       EDIT_IMAGE_REF_TO_VIDEO:
-        model: "gen3a_turbo"
+        model: "gen4_turbo"
         generator: "runway"
         # No fallback - Runway is primary for image-to-video
   

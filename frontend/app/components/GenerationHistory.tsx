@@ -1,10 +1,10 @@
 "use client"
 import { useState, useEffect, useRef } from 'react'
-import { History, Wand2, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, ExternalLink, Tag, Trash2, Play } from 'lucide-react'
+import { History, Wand2, CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink, Tag, Trash2, Play } from 'lucide-react'
 import type { GenerationHistoryProps, HistoryItem } from '../types'
 import { getUserHistory } from '../lib/api'
 
-export default function GenerationHistory({ refreshTrigger, userId, onSelectImage, onTagImage, onDeleteItem }: GenerationHistoryProps) {
+export default function GenerationHistory({ refreshTrigger, userId, onSelectImage, onTagImage, onDeleteItem, taggedImages }: GenerationHistoryProps) {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(0)
@@ -234,8 +234,12 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                                 e.stopPropagation()
                                 onTagImage(item.output_url!)
                               }}
-                              className="p-1 bg-purple-600 text-white rounded-full hover:bg-purple-700"
-                              title="Tag this image"
+                              className={`p-1 text-white rounded-full ${
+                                taggedImages?.has(item.output_url!)
+                                  ? 'bg-green-600 hover:bg-green-700'
+                                  : 'bg-gray-600 hover:bg-gray-700'
+                              }`}
+                              title={taggedImages?.has(item.output_url!) ? "Image tagged" : "Tag this image"}
                             >
                               <Tag className="w-3 h-3" />
                             </button>

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera, Send } from 'lucide-react';
 import { generateContent, uploadImage, getUserReferences } from '../lib/api';
-import type { GenerationResponse, UploadResponse, HistoryItem, Reference, ReferenceImage } from '../types';
+import type { GenerationResponse, UploadResponse, HistoryItem, ReferenceImage } from '../types';
 import GenerationHistory from './GenerationHistory';
 import ReferencesPanel from './ReferencesPanel';
 import TagImageModal from './TagImageModal';
+import ImageMaximizeModal from './ImageMaximizeModal';
 import { AuthModal } from './AuthModal';
 import { useAuth } from './AuthProvider';
 import { getOrCreateUserId } from '../lib/userUtils';
@@ -31,6 +32,10 @@ const PerplexityInterface = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [imageToMaximize, setImageToMaximize] = useState<string>('');
+  const [taggedImages, setTaggedImages] = useState<Set<string>>(new Set());
+  const [imageTagMap, setImageTagMap] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -350,8 +355,15 @@ const PerplexityInterface = () => {
   };
 
   const handleImageTagged = (tag: string) => {
-    // Optionally refresh references or show a success message
-    console.log(`Image tagged as @${tag}`);
+    // Mark the image as tagged and store the tag mapping
+    setTaggedImages(prev => new Set(prev).add(imageToTag));
+    setImageTagMap(prev => new Map(prev).set(imageToTag, tag));
+    console.log(`Image tagged as @${tag}`, 'Image URL:', imageToTag, 'Tagged images:', taggedImages);
+  };
+
+  const handleImageMaximize = (imageUrl: string) => {
+    setImageToMaximize(imageUrl);
+    setShowImageModal(true);
   };
 
   const selectFromHistory = async (item: HistoryItem) => {
@@ -536,7 +548,7 @@ const PerplexityInterface = () => {
                 placeholder="Let's make something amazing..."
                 disabled={isGenerating}
                 userId={userId}
-                className="flex-1 bg-transparent text-white placeholder-gray-400 text-lg outline-none disabled:opacity-50"
+                className="bg-transparent text-white placeholder-gray-400 text-lg outline-none disabled:opacity-50"
               />
 
               {/* Submit Button */}
@@ -634,8 +646,12 @@ const PerplexityInterface = () => {
                     <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleTagImage(image.public_url)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white rounded-full p-1"
-                        title="Tag image"
+                        className={`text-white rounded-full p-1 ${
+                          taggedImages.has(image.public_url)
+                            ? 'bg-green-600 hover:bg-green-700'
+                            : 'bg-gray-600 hover:bg-gray-700'
+                        }`}
+                        title={taggedImages.has(image.public_url) ? "Image tagged" : "Tag image"}
                       >
                         <Tag className="w-3 h-3" />
                       </button>
@@ -733,13 +749,25 @@ const PerplexityInterface = () => {
                     <img 
                       src={result.output_url} 
                       alt="Generated content"
-                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg"
+                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => result.output_url && handleImageMaximize(result.output_url)}
+                      title="Click to maximize image"
                     />
                     {/* Tag icon overlay */}
                     <button
-                      onClick={() => result.output_url && handleTagImage(result.output_url)}
-                      className="absolute top-2 right-2 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-all opacity-75 hover:opacity-100 shadow-lg"
-                      title="Tag this image"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log('Tagged images:', taggedImages, 'Current URL:', result.output_url, 'Is tagged:', result.output_url ? taggedImages.has(result.output_url) : false);
+                        if (result.output_url) {
+                          handleTagImage(result.output_url);
+                        }
+                      }}
+                      className={`absolute top-2 right-2 p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
+                        taggedImages.has(result.output_url) 
+                          ? 'bg-green-600 hover:bg-green-700' 
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
+                      title={taggedImages.has(result.output_url) ? "Image tagged" : "Tag this image"}
                     >
                       <Tag className="w-4 h-4" />
                     </button>
@@ -759,13 +787,24 @@ const PerplexityInterface = () => {
                     <img 
                       src={previousResult.output_url} 
                       alt="Previous generated content"
-                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg opacity-75"
+                      className="max-w-full h-auto rounded-lg mx-auto shadow-lg opacity-75 cursor-pointer hover:opacity-60 transition-opacity"
+                      onClick={() => previousResult.output_url && handleImageMaximize(previousResult.output_url)}
+                      title="Click to maximize image"
                     />
                     {/* Tag icon overlay */}
                     <button
-                      onClick={() => previousResult.output_url && handleTagImage(previousResult.output_url)}
-                      className="absolute top-2 right-2 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-all opacity-75 hover:opacity-100 shadow-lg"
-                      title="Tag this image"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (previousResult.output_url) {
+                          handleTagImage(previousResult.output_url);
+                        }
+                      }}
+                      className={`absolute top-2 right-2 p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
+                        taggedImages.has(previousResult.output_url) 
+                          ? 'bg-green-600 hover:bg-green-700' 
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
+                      title={taggedImages.has(previousResult.output_url) ? "Image tagged" : "Tag this image"}
                     >
                       <Tag className="w-4 h-4" />
                     </button>
@@ -825,6 +864,7 @@ const PerplexityInterface = () => {
                   onSelectImage={selectFromHistory}
                   onTagImage={handleTagImage}
                   onDeleteItem={handleDeleteGeneration}
+                  taggedImages={taggedImages}
                 />
               </div>
 
@@ -855,6 +895,7 @@ const PerplexityInterface = () => {
           imageUrl={imageToTag}
           userId={userId}
           onTagged={handleImageTagged}
+          initialTag={imageTagMap.get(imageToTag)}
         />
 
         {/* Authentication Modal */}
@@ -905,6 +946,14 @@ const PerplexityInterface = () => {
             </div>
           </div>
         )}
+
+        {/* Image Maximize Modal */}
+        <ImageMaximizeModal
+          isOpen={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          imageUrl={imageToMaximize}
+          altText="Maximized working image"
+        />
 
         {/* Hidden canvas for photo capture */}
         <canvas ref={canvasRef} className="hidden" />

@@ -11,6 +11,7 @@ class ReferenceCreateRequest(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
     category: str = "general"
+    thumbnail_url: Optional[str] = None
     
     @validator('tag')
     def validate_tag(cls, v):
@@ -55,7 +56,8 @@ async def create_reference(
             image_url=reference.image_url,
             display_name=reference.display_name,
             description=reference.description,
-            category=reference.category
+            category=reference.category,
+            thumbnail_url=reference.thumbnail_url
         )
         
         if result:

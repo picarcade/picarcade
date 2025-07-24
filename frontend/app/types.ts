@@ -54,6 +54,7 @@ export interface GenerationHistoryProps {
   onSelectImage?: (item: HistoryItem) => void;
   onTagImage?: (imageUrl: string) => void;
   onDeleteItem?: (generationId: string) => void;
+  taggedImages?: Set<string>;
 }
 
 export interface Reference {

@@ -115,7 +115,4 @@
   animation: throb-outline 2s ease-in-out infinite;
 }
 
-/* Style @ mentions in input fields to appear slightly bold */
-.has-references {
-  font-weight: 500;
-}
+/* @ mentions styling removed - HTML inputs don't support mixed text styling */

@@ -536,7 +536,7 @@ async def generate_content(
                     "uploaded_images": len(request.uploaded_images) if request.uploaded_images else 0,
                     "reason": "bypassing_hailuo_safety_restrictions"
                 })
-                selected_model = "gen3a_turbo"
+                selected_model = "gen4_turbo"
                 configured_generator = "runway"
             else:
                 # Text-to-video (no audio): Use Minimax Hailuo-02 as primary, VEO-3-Fast as fallback

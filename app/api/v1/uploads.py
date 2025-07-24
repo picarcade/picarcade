@@ -60,17 +60,18 @@ async def upload_image(
         )
     
     try:
-        # Upload the image
-        success, file_path, public_url = await storage_service.upload_image(
+        # Upload the image with thumbnail generation
+        success, file_path, public_url, thumbnail_url = await storage_service.upload_image_with_thumbnail(
             file=file,
             user_id=user_id,
-            resize_max=resize_max
+            resize_max=resize_max,
+            thumbnail_size=256  # Generate 256px thumbnails
         )
         
         if not success:
             raise HTTPException(
                 status_code=500,
-                detail=f"Upload failed: {public_url}"  # public_url contains error message on failure
+                detail=f"Upload failed: {thumbnail_url}"  # thumbnail_url contains error message on failure
             )
         
         # Log successful upload
@@ -80,9 +81,10 @@ async def upload_image(
             "success": True,
             "file_path": file_path,
             "public_url": public_url,
+            "thumbnail_url": thumbnail_url,
             "filename": file.filename,
             "content_type": file.content_type,
-            "message": "Image uploaded successfully"
+            "message": "Image uploaded successfully with thumbnail"
         }
         
     except HTTPException:
