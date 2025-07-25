@@ -170,13 +170,13 @@ async def test_subscription_flow():
     test_user_id = "test_user_demo_123"
     
     try:
-        # Try to create a trial subscription
+        # Try to create initial XP balance
         from app.services.subscription_service import subscription_service
         
-        success = await subscription_service.create_trial_subscription(test_user_id)
+        success = await subscription_service.create_initial_xp_balance(test_user_id, 200)
         
         if success:
-            print("✅ Trial subscription creation works")
+            print("✅ Initial XP balance creation works")
             
             # Get the subscription
             subscription = await subscription_service.get_user_subscription(test_user_id)
@@ -193,7 +193,7 @@ async def test_subscription_flow():
             else:
                 print("❌ Failed to retrieve test subscription")
         else:
-            print("❌ Trial subscription creation failed")
+            print("❌ Initial XP balance creation failed")
             
     except Exception as e:
         print(f"❌ Error testing subscription flow: {e}")

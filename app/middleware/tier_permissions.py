@@ -22,7 +22,7 @@ class TierPermissionMiddleware:
         
         # Define which endpoints require tier checking
         self.protected_endpoints = {
-            r"/api/v1/generate.*": "generation",
+            r"/api/v1/generation/generate.*": "generation",
             r"/api/v1/simplified/.*": "generation"
         }
         
@@ -42,8 +42,12 @@ class TierPermissionMiddleware:
     async def __call__(self, request: Request, call_next):
         """Process request through tier validation"""
         
+        # Debug logging
+        logger.info(f"🔍 MIDDLEWARE: Processing request to {request.url.path}")
+        
         # Check if this endpoint needs tier validation
         if not self._needs_tier_validation(request):
+            logger.info(f"⚪ MIDDLEWARE: {request.url.path} does not need tier validation")
             return await call_next(request)
         
         try:
@@ -80,11 +84,12 @@ class TierPermissionMiddleware:
                     status_code=402,
                     content={
                         "error": "no_subscription", 
-                        "message": "No active subscription found"
+                        "message": "You need to subscribe to use this feature",
+                        "redirect_to_subscriptions": True
                     }
                 )
             
-            current_tier = subscription.get("current_level", 1)
+            current_tier = subscription.get("current_level", 0)
             xp_cost = await subscription_service.get_xp_cost_for_generation(
                 generation_type, current_tier
             )
@@ -95,10 +100,11 @@ class TierPermissionMiddleware:
                     status_code=402,
                     content={
                         "error": "insufficient_xp",
-                        "message": f"Insufficient XP balance. Need {xp_cost} XP, have {xp_balance} XP",
+                        "message": f"Insufficient credits. Need {xp_cost} credits, have {xp_balance} credits",
                         "xp_required": xp_cost,
                         "xp_balance": xp_balance,
-                        "xp_deficit": xp_cost - xp_balance
+                        "xp_deficit": xp_cost - xp_balance,
+                        "redirect_to_subscriptions": True
                     }
                 )
             
@@ -106,6 +112,8 @@ class TierPermissionMiddleware:
             request.state.user_tier = current_tier
             request.state.xp_cost = xp_cost
             request.state.generation_type = generation_type
+            
+            logger.info(f"✅ MIDDLEWARE: Set state - XP Cost: {xp_cost}, Generation Type: {generation_type}, User Tier: {current_tier}")
             
             return await call_next(request)
             
@@ -119,14 +127,19 @@ class TierPermissionMiddleware:
         path = request.url.path
         method = request.method
         
+        logger.info(f"🔍 MIDDLEWARE: Checking validation need - Path: {path}, Method: {method}")
+        
         # Only check POST requests to generation endpoints
         if method != "POST":
+            logger.info(f"⚪ MIDDLEWARE: Skipping non-POST request")
             return False
         
         for pattern, _ in self.protected_endpoints.items():
             if re.match(pattern, path):
+                logger.info(f"✅ MIDDLEWARE: Path {path} matches pattern {pattern} - needs validation")
                 return True
         
+        logger.info(f"⚪ MIDDLEWARE: Path {path} does not match any protected patterns")
         return False
     
     async def _extract_user_id(self, request: Request) -> Optional[str]:

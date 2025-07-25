@@ -69,26 +69,35 @@ class SubscriptionService:
             logger.warning(f"No subscription found for user {user_id}: {e}")
             return None
     
-    async def create_trial_subscription(
+    async def create_initial_xp_balance(
         self, 
         user_id: str, 
-        tier_name: str = "Pixel Rookie"
+        initial_xp: int = 200
     ) -> bool:
-        """Create a trial subscription for new users"""
+        """Create initial XP balance for new users"""
         try:
-            # Call the database function to create trial
-            result = self.supabase.rpc(
-                "create_trial_subscription",
-                {
-                    "p_user_id": user_id,
-                    "p_tier_name": tier_name
-                }
-            ).execute()
+            # Create initial user subscription record with XP balance
+            result = self.supabase.table("user_subscriptions").insert({
+                "user_id": user_id,
+                "xp_balance": initial_xp,
+                "xp_allocated_this_period": initial_xp,
+                "xp_used_this_period": 0,
+                "status": "active",
+                "tier_id": None,  # No subscription tier yet
+                "current_level": 0  # No tier level
+            }).execute()
             
-            return result.data if result.data is not None else True
+            # Create XP allocation transaction
+            await self._create_xp_allocation_transaction(
+                user_id,
+                initial_xp,
+                "Welcome bonus - initial XP allocation"
+            )
+            
+            return True
             
         except Exception as e:
-            logger.error(f"Error creating trial subscription for {user_id}: {e}")
+            logger.error(f"Error creating initial XP balance for {user_id}: {e}")
             return False
     
     async def check_user_tier_permission(
@@ -265,7 +274,7 @@ class SubscriptionService:
                 "status": subscription.status,
                 "current_period_start": subscription.current_period_start,
                 "current_period_end": subscription.current_period_end,
-                "trial_end": subscription.trial_end
+
             }
             
         except Exception as e:
@@ -312,8 +321,7 @@ class SubscriptionService:
                 "last_xp_reset": datetime.now()
             }
             
-            if subscription_data.get("trial_end"):
-                update_data["trial_end"] = datetime.fromtimestamp(subscription_data["trial_end"])
+
             
             result = self.supabase.table("user_subscriptions")\
                 .upsert({"user_id": user_id, **update_data})\

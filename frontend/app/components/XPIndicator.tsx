@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Crown, Star, Gamepad2, AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface Subscription {
   tier_level: number;
   tier_display_name: string;
   xp_balance: number;
+  xp_allocated_this_period: number;
   status: string;
 }
 
@@ -21,11 +22,7 @@ interface XPIndicatorProps {
   className?: string;
 }
 
-const tierConfig = {
-  1: { icon: Gamepad2, color: 'text-green-400', emoji: '🎮' },
-  2: { icon: Star, color: 'text-blue-400', emoji: '🏆' },
-  3: { icon: Crown, color: 'text-purple-400', emoji: '👑' }
-};
+
 
 export default function XPIndicator({
   currentXP,
@@ -39,10 +36,18 @@ export default function XPIndicator({
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [showWarning, setShowWarning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [animatedXP, setAnimatedXP] = useState(currentXP);
 
   useEffect(() => {
     loadSubscriptionData();
   }, []);
+
+  useEffect(() => {
+    // Animate XP changes
+    if (animatedXP !== currentXP) {
+      setAnimatedXP(currentXP);
+    }
+  }, [currentXP, animatedXP]);
 
   useEffect(() => {
     // Show warning if XP is insufficient
@@ -77,50 +82,106 @@ export default function XPIndicator({
     }
   };
 
-  const currentTier = subscription ? tierConfig[subscription.tier_level as keyof typeof tierConfig] : tierConfig[1];
-  const TierIcon = currentTier.icon;
   const hasInsufficientXP = generationCost > 0 && currentXP < generationCost;
+  
+  // Calculate health bar percentage
+  const maxXP = subscription?.xp_allocated_this_period || 1000; // fallback to 1000 if no subscription
+  const healthPercentage = Math.max(0, Math.min(100, (currentXP / maxXP) * 100));
+  const afterCostPercentage = generationCost > 0 
+    ? Math.max(0, Math.min(100, ((currentXP - generationCost) / maxXP) * 100))
+    : healthPercentage;
+
+  // Determine health bar colors based on percentage
+  const getHealthBarColor = (percentage: number) => {
+    if (percentage > 60) return 'from-green-500 to-green-400';
+    if (percentage > 30) return 'from-orange-500 to-orange-400';
+    return 'from-red-500 to-red-400';
+  };
+
+  const getHealthBarBgColor = (percentage: number) => {
+    if (percentage > 60) return 'bg-green-500/20';
+    if (percentage > 30) return 'bg-orange-500/20';
+    return 'bg-red-500/20';
+  };
 
   const getXPStatusColor = () => {
     if (hasInsufficientXP) return 'text-red-400';
-    if (currentXP < 50) return 'text-yellow-400';
+    if (healthPercentage <= 30) return 'text-red-400';
+    if (healthPercentage <= 60) return 'text-orange-400';
     return 'text-green-400';
   };
 
   if (isLoading) {
     return (
       <div className={`flex items-center space-x-2 ${className}`}>
-        <div className="animate-pulse bg-gray-700 rounded-full h-8 w-24"></div>
+        <div className="animate-pulse bg-gray-700 rounded-full h-8 w-48"></div>
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center space-x-2 ${className}`}>
-      {/* XP Balance */}
+    <div className={`flex items-center space-x-3 ${className}`}>
+      {/* Health Bar Container */}
       <motion.div
-        className={`flex items-center space-x-2 px-3 py-1.5 rounded-full bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 ${
+        className={`flex items-center space-x-3 px-4 py-2 rounded-xl bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 ${
           hasInsufficientXP ? 'border-red-500/50 bg-red-900/20' : ''
         }`}
-        animate={isGenerating ? { scale: [1, 1.05, 1] } : {}}
+        animate={isGenerating ? { scale: [1, 1.02, 1] } : {}}
         transition={{ duration: 2, repeat: Infinity }}
       >
-        <TierIcon className={`w-4 h-4 ${currentTier.color}`} />
-        
-        <div className="flex items-center space-x-1">
-          <Zap className={`w-4 h-4 ${getXPStatusColor()}`} />
-          <span className={`text-sm font-medium ${getXPStatusColor()}`}>
-            {currentXP.toLocaleString()}
-          </span>
+        {/* Health Bar */}
+        <div className="flex items-center space-x-2 min-w-0">
+          <div className="flex flex-col space-y-1 min-w-0">
+            {/* Health Bar Visual */}
+            <div className="relative w-32 h-3 bg-gray-700 rounded-full overflow-hidden">
+              {/* Background glow */}
+              <div 
+                className={`absolute inset-0 rounded-full ${getHealthBarBgColor(healthPercentage)}`}
+              />
+              
+              {/* Current XP Bar */}
+              <motion.div
+                className={`absolute left-0 top-0 h-full bg-gradient-to-r ${getHealthBarColor(healthPercentage)} rounded-full`}
+                initial={{ width: `${healthPercentage}%` }}
+                animate={{ width: `${healthPercentage}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              />
+              
+              {/* Preview of XP after cost */}
+              {generationCost > 0 && afterCostPercentage !== healthPercentage && (
+                <motion.div
+                  className={`absolute left-0 top-0 h-full bg-gradient-to-r ${getHealthBarColor(afterCostPercentage)} rounded-full opacity-50`}
+                  initial={{ width: `${healthPercentage}%` }}
+                  animate={{ width: `${afterCostPercentage}%` }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                />
+              )}
+              
+              {/* Shine effect */}
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent rounded-full"
+                animate={{ x: [-100, 132] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              />
+            </div>
+            
+            {/* XP Text */}
+            <div className="flex items-center justify-center text-xs">
+              <span className={`font-medium ${getXPStatusColor()}`}>
+                {animatedXP.toLocaleString()} XP
+              </span>
+            </div>
+          </div>
         </div>
 
+        {/* Generation Cost Preview */}
         {generationCost > 0 && (
-          <>
-            <span className="text-gray-400 text-sm">-</span>
-            <span className={`text-sm font-medium ${hasInsufficientXP ? 'text-red-400' : 'text-gray-300'}`}>
+          <div className="flex items-center space-x-1 text-xs">
+            <span className="text-gray-400">-</span>
+            <span className={`font-medium ${hasInsufficientXP ? 'text-red-400' : 'text-gray-300'}`}>
               {generationCost}
             </span>
-          </>
+          </div>
         )}
       </motion.div>
 
@@ -146,13 +207,26 @@ export default function XPIndicator({
         )}
       </AnimatePresence>
 
-      {/* Low XP warning for balance under 50 */}
-      {currentXP < 50 && currentXP > 0 && !hasInsufficientXP && (
+      {/* Low XP warning for balance under 30% */}
+      {healthPercentage < 30 && healthPercentage > 0 && !hasInsufficientXP && (
         <motion.button
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           onClick={() => router.push('/subscriptions')}
-          className="flex items-center space-x-1 px-2 py-1 bg-yellow-500/20 rounded-full text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+          className="flex items-center space-x-1 px-2 py-1 bg-red-500/20 rounded-full text-red-400 hover:bg-red-500/30 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          <span className="text-xs">Low XP</span>
+        </motion.button>
+      )}
+
+      {/* Medium XP warning for balance under 60% */}
+      {healthPercentage < 60 && healthPercentage >= 30 && !hasInsufficientXP && (
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          onClick={() => router.push('/subscriptions')}
+          className="flex items-center space-x-1 px-2 py-1 bg-orange-500/20 rounded-full text-orange-400 hover:bg-orange-500/30 transition-colors"
         >
           <Plus className="w-3 h-3" />
           <span className="text-xs">Top Up</span>

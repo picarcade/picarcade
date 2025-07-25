@@ -133,20 +133,12 @@ export default function XPBalance({
                 {currentTier.emoji} {subscription.tier_display_name}
               </h3>
               <p className="text-sm text-gray-600">
-                {subscription.status === 'trial' ? 'Trial Active' : 'Subscription Active'}
+                Subscription Active
               </p>
             </div>
           </div>
           
-          {subscription.status === 'trial' && (
-            <motion.div
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium"
-            >
-              TRIAL
-            </motion.div>
-          )}
+
         </div>
       </div>
 

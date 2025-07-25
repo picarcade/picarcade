@@ -67,6 +67,7 @@ virtual_tryon_service = VirtualTryOnService()
 async def generate_content(
     request: GenerationRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     current_user: Optional[Dict] = Depends(get_current_user)
 ):
     """
@@ -767,6 +768,47 @@ async def generate_content(
             if not result.metadata:
                 result.metadata = {}
             result.metadata["session_id"] = effective_session_id
+        
+        # Deduct XP for successful generation
+        api_logger.info(f"🔍 GENERATION: Checking XP deduction - Success: {result.success}, Has XP Cost: {hasattr(http_request.state, 'xp_cost')}, Has Gen Type: {hasattr(http_request.state, 'generation_type')}")
+        
+        if result.success and hasattr(http_request.state, 'xp_cost') and hasattr(http_request.state, 'generation_type'):
+            try:
+                from app.services.subscription_service import subscription_service
+                
+                xp_cost = getattr(http_request.state, 'xp_cost', 10)
+                generation_type = getattr(http_request.state, 'generation_type', 'NEW_IMAGE')
+                
+                api_logger.info(f"💰 GENERATION: Starting XP deduction - Cost: {xp_cost}, Type: {generation_type}, User: {request.user_id}")
+                
+                api_logger.debug("Deducting XP for successful generation", extra={
+                    "user_id": request.user_id,
+                    "generation_id": generation_id,
+                    "xp_cost": xp_cost,
+                    "generation_type": generation_type
+                })
+                
+                deduction_success = await subscription_service.deduct_xp_for_generation(
+                    user_id=str(request.user_id),  # Convert to string for database function
+                    generation_id=generation_id,
+                    generation_type=generation_type,
+                    model_used=result.model_used or "unknown",
+                    xp_cost=xp_cost,
+                    actual_cost_usd=0.0,  # We'll implement cost tracking later
+                    routing_decision=routing_decision.routing_logic if 'routing_decision' in locals() and routing_decision else {}
+                )
+                
+                if deduction_success:
+                    api_logger.info(f"✅ GENERATION: XP deducted successfully - {xp_cost} XP from user {request.user_id}")
+                else:
+                    api_logger.warning(f"❌ GENERATION: XP deduction failed - User: {request.user_id}, Cost: {xp_cost}")
+                    
+            except Exception as deduction_error:
+                api_logger.error(f"💥 GENERATION: XP deduction error - {str(deduction_error)} - User: {request.user_id}")
+                # Don't fail the generation if XP deduction fails - log and continue
+        else:
+            if result.success:
+                api_logger.warning(f"⚠️ GENERATION: Successful generation but no XP deduction - Missing state variables")
         
         # Log final generation summary
         api_logger.log_generation_summary(

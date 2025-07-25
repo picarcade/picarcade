@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera, Send } from 'lucide-react';
+import { Search, Paperclip, Image, Loader2, X, History, Tag, User, LogOut, RotateCcw, Camera, Send, Settings } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { generateContent, uploadImage, getUserReferences } from '../lib/api';
 import type { GenerationResponse, UploadResponse, HistoryItem, ReferenceImage } from '../types';
 import GenerationHistory from './GenerationHistory';
@@ -15,6 +16,7 @@ import XPNotification from './XPNotification';
 
 const PerplexityInterface = () => {
   const { user, loading, signOut } = useAuth();
+  const router = useRouter();
   const [inputValue, setInputValue] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResponse | null>(null);
@@ -205,12 +207,8 @@ const PerplexityInterface = () => {
 
         // Check if user has sufficient XP
         if (currentXP < cost) {
-          setXpNotification({
-            show: true,
-            amount: cost - currentXP,
-            type: 'loss',
-            reason: `Need ${cost - currentXP} more XP for this generation`
-          });
+          // Redirect to subscriptions page for insufficient credits
+          router.push('/subscriptions');
           return;
         }
       }
@@ -258,19 +256,8 @@ const PerplexityInterface = () => {
       if (!response.success) {
         setError(response.error_message || 'Generation failed');
       } else {
-        // Deduct XP for successful generation
-        if (generationCost > 0) {
-          setCurrentXP(prev => prev - generationCost);
-          setXpNotification({
-            show: true,
-            amount: generationCost,
-            type: 'loss',
-            reason: `${currentGenerationType.replace('_', ' ').toLowerCase()} generation`
-          });
-          
-          // Reload XP data to ensure accuracy
-          loadXPData();
-        }
+        // Reload XP data from server to get actual balance after deduction (no popup)
+        loadXPData();
 
         // Clear input after successful generation
         setInputValue('');
@@ -629,6 +616,16 @@ const PerplexityInterface = () => {
                       <p className="text-white text-sm font-medium">{user.email}</p>
                       <p className="text-gray-400 text-xs">Signed in</p>
                     </div>
+                    <button
+                      onClick={() => {
+                        router.push('/subscriptions');
+                        setShowUserMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-3 text-left text-gray-300 hover:bg-gray-700 transition-colors"
+                    >
+                      <Settings className="w-4 h-4" />
+                      Account
+                    </button>
                     <button
                       onClick={async () => {
                         await signOut();

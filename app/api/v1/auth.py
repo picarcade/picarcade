@@ -131,6 +131,10 @@ async def register(request: RegisterRequest):
                 user_id=user_id,
                 metadata={"registration_time": "now", "source": "register_endpoint"}
             )
+            
+            # Gift 200 XP to new user
+            from app.services.subscription_service import subscription_service
+            await subscription_service.create_initial_xp_balance(user_id, 200)
         
         return AuthResponse(
             user=auth_result["user"].__dict__,

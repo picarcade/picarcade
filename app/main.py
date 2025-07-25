@@ -77,8 +77,11 @@ app.add_middleware(
 )
 
 # Add tier-based permission middleware
-from app.middleware.tier_permissions import add_tier_permission_middleware
-# Note: Middleware will be added during startup in lifespan function
+from app.middleware.tier_permissions import TierPermissionMiddleware
+
+# Add the tier permission middleware directly
+middleware_instance = TierPermissionMiddleware(app)
+app.middleware("http")(middleware_instance)
 
 # Add validation error handler for better 422 debugging
 @app.exception_handler(RequestValidationError)

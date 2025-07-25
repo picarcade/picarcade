@@ -56,6 +56,14 @@ export const generateContent = async (request: GenerationRequest): Promise<Gener
     return response.data
   } catch (error) {
     if (axios.isAxiosError(error)) {
+      // Handle insufficient credits by redirecting to subscriptions
+      if (error.response?.status === 402 && error.response?.data?.redirect_to_subscriptions) {
+        // Use window.location to redirect (works without router context)
+        if (typeof window !== 'undefined') {
+          window.location.href = '/subscriptions';
+        }
+        throw new Error(error.response?.data?.message || 'Insufficient credits')
+      }
       throw new Error(error.response?.data?.detail || error.message)
     }
     throw error

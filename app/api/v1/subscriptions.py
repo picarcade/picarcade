@@ -49,7 +49,7 @@ class SubscriptionResponse(BaseModel):
     xp_allocated_this_period: int
     xp_used_this_period: int
     current_period_end: Optional[str]
-    trial_end: Optional[str]
+
 
 class TierResponse(BaseModel):
     id: str
@@ -76,7 +76,7 @@ async def get_subscription_tiers():
         logger.error(f"Error fetching tiers: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subscription tiers")
 
-@router.get("/current", response_model=Optional[SubscriptionResponse])
+@router.get("/current", response_model=SubscriptionResponse)
 async def get_current_subscription(current_user: dict = Depends(get_current_user)):
     """Get current user's subscription details"""
     try:
@@ -84,9 +84,9 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
         subscription = await subscription_service.get_user_subscription(user_id)
         
         if not subscription:
-            # Create trial subscription for new users
-            trial_created = await subscription_service.create_trial_subscription(user_id)
-            if trial_created:
+            # Create initial XP balance for new users
+            initial_balance_created = await subscription_service.create_initial_xp_balance(user_id)
+            if initial_balance_created:
                 subscription = await subscription_service.get_user_subscription(user_id)
         
         if subscription and subscription.get("subscription_tiers"):
@@ -101,7 +101,7 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
                 xp_allocated_this_period=subscription["xp_allocated_this_period"],
                 xp_used_this_period=subscription["xp_used_this_period"],
                 current_period_end=subscription.get("current_period_end"),
-                trial_end=subscription.get("trial_end")
+    
             )
         
         return None
@@ -492,36 +492,7 @@ async def stripe_webhook(request: Request):
         logger.error(f"Error processing webhook: {e}")
         raise HTTPException(status_code=500, detail="Webhook processing error")
 
-@router.post("/trial/create")
-async def create_trial(current_user: dict = Depends(get_current_user)):
-    """Create a trial subscription for the user"""
-    try:
-        user_id = current_user["id"]
-        
-        # Check if user already has a subscription
-        existing = await subscription_service.get_user_subscription(user_id)
-        if existing:
-            return {
-                "success": False,
-                "message": "User already has a subscription"
-            }
-        
-        # Create trial
-        success = await subscription_service.create_trial_subscription(user_id)
-        
-        if success:
-            return {
-                "success": True,
-                "message": "Trial subscription created successfully"
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create trial")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating trial: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create trial")
+
 
 @router.get("/permissions/{generation_type}")
 async def check_generation_permission(

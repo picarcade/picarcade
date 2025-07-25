@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Settings, CreditCard, Calendar, Download,
-  AlertTriangle, CheckCircle, XCircle, Clock,
+  AlertTriangle, CheckCircle, XCircle,
   Trash2, Edit, Plus, DollarSign, TrendingUp, Zap, X
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -25,7 +25,7 @@ interface Subscription {
   status: string;
   current_period_start: string;
   current_period_end: string;
-  trial_end?: string;
+
   stripe_subscription_id?: string;
   stripe_customer_id?: string;
 }
@@ -184,7 +184,7 @@ export default function SubscriptionManagePage() {
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       active: { icon: CheckCircle, color: 'text-green-600 bg-green-50 border-green-200', text: 'Active' },
-      trial: { icon: Clock, color: 'text-blue-600 bg-blue-50 border-blue-200', text: 'Trial' },
+    
       canceled: { icon: XCircle, color: 'text-red-600 bg-red-50 border-red-200', text: 'Canceled' },
       past_due: { icon: AlertTriangle, color: 'text-yellow-600 bg-yellow-50 border-yellow-200', text: 'Past Due' }
     };
@@ -279,9 +279,7 @@ export default function SubscriptionManagePage() {
                     
                     <div className="space-y-2 text-sm text-gray-300">
                       <div>Next billing: {formatDate(new Date(subscription.current_period_end).getTime() / 1000)}</div>
-                      {subscription.trial_end && (
-                        <div>Trial ends: {formatDate(new Date(subscription.trial_end).getTime() / 1000)}</div>
-                      )}
+                      
                     </div>
 
                     <div className="flex space-x-3 mt-6">

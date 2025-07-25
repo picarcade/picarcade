@@ -38,7 +38,7 @@ interface Subscription {
   xp_used_this_period: number;
   status: string;
   current_period_end?: string;
-  trial_end?: string;
+
 }
 
 export default function SubscriptionsPage() {

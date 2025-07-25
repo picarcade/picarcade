@@ -78,7 +78,7 @@ export default function SubscriptionTiers({
     const features = [];
     
     // XP Allocation from documentation
-    features.push(`${config.xp.toLocaleString()} XP credits`);
+    features.push(`${config.xp.toLocaleString()} XP`);
 
     // Generation types
     if (tier.generation_types_allowed.includes('NEW_IMAGE')) {
@@ -148,14 +148,7 @@ export default function SubscriptionTiers({
               onSelectTier(tier);
             }}
           >
-            {/* Current Tier Badge */}
-            {isCurrentTier && (
-              <div className="absolute -top-2 sm:-top-3 right-2 sm:right-4 z-10">
-                <div className="px-2 sm:px-3 py-1 bg-gradient-to-r from-yellow-400 to-yellow-500 text-yellow-900 rounded-full text-xs font-bold">
-                  CURRENT
-                </div>
-              </div>
-            )}
+
 
             <div className="p-4 sm:p-6 flex flex-col flex-grow">
               {/* Tier Name */}
