@@ -65,6 +65,7 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentStep, setPaymentStep] = useState<'form' | 'processing' | 'success' | 'error'>('form');
+  const [cardReady, setCardReady] = useState(false);
 
   const price = currency === 'usd' ? tier.monthly_price_usd : tier.monthly_price_aud;
   const currencySymbol = currency === 'usd' ? '$' : 'A$';
@@ -73,6 +74,14 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
     event.preventDefault();
 
     if (!stripe || !elements) {
+      console.error('Stripe not loaded:', { stripe: !!stripe, elements: !!elements });
+      setError('Payment system not ready. Please try again.');
+      return;
+    }
+
+    if (!cardReady) {
+      console.error('Card element not ready');
+      setError('Card details not ready. Please wait a moment and try again.');
       return;
     }
 
@@ -83,7 +92,8 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
     const cardElement = elements.getElement(CardElement);
 
     if (!cardElement) {
-      setError('Card element not found');
+      console.error('Card element not found after getElement call');
+      setError('Card element not found. Please refresh and try again.');
       setPaymentStep('error');
       setIsProcessing(false);
       return;
@@ -101,7 +111,8 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
       }
 
       // Call your backend to create subscription
-      const response = await fetch('/api/v1/subscriptions/create', {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/api/v1/subscriptions/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -215,7 +226,17 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
             Card Information
           </label>
           <div className="border rounded-lg p-4 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-            <CardElement options={cardElementOptions} />
+            <CardElement 
+              options={cardElementOptions}
+              onReady={() => setCardReady(true)}
+              onChange={(event) => {
+                if (event.error) {
+                  setError(event.error.message);
+                } else {
+                  setError(null);
+                }
+              }}
+            />
           </div>
         </div>
 
@@ -261,7 +282,7 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={!stripe || isProcessing}
+          disabled={!stripe || isProcessing || !cardReady}
           className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
         >
           {isProcessing ? (
@@ -286,20 +307,20 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
   );
 }
 
-export default function PaymentModal({
-  isOpen,
-  onClose,
+function PaymentModalContent({
   selectedTier,
   currentTier,
-  currency = 'usd',
-  onSuccess
-}: PaymentModalProps) {
+  currency,
+  onSuccess,
+  onClose
+}: {
+  selectedTier: Tier;
+  currentTier?: number;
+  currency: 'usd' | 'aud';
+  onSuccess: (subscriptionId: string) => void;
+  onClose: () => void;
+}) {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-
-  const handleClose = () => {
-    setShowPaymentForm(false);
-    onClose();
-  };
 
   const handleProceedToPayment = () => {
     setShowPaymentForm(true);
@@ -309,11 +330,103 @@ export default function PaymentModal({
     setShowPaymentForm(false);
   };
 
-  if (!selectedTier) return null;
-
   const price = currency === 'usd' ? selectedTier.monthly_price_usd : selectedTier.monthly_price_aud;
   const currencySymbol = currency === 'usd' ? '$' : 'A$';
   const isUpgrade = currentTier && selectedTier.tier_level > currentTier;
+
+  return (
+    <>
+      {/* Close Button */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors z-10"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      {!showPaymentForm ? (
+        /* Tier Confirmation */
+        <div>
+          <div className="text-center mb-6">
+            <div className="inline-flex p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl mb-4">
+              <Zap className="w-6 h-6 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              {isUpgrade ? 'Upgrade to' : 'Subscribe to'} {selectedTier.tier_display_name}
+            </h3>
+            <p className="text-gray-600">
+              {selectedTier.tier_description}
+            </p>
+          </div>
+
+          {/* Features */}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <Zap className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium">Monthly XP Allocation</span>
+              </div>
+              <span className="text-green-700 font-bold">
+                {selectedTier.monthly_xp_allocation.toLocaleString()} XP
+              </span>
+            </div>
+          </div>
+
+          {/* Pricing */}
+          <div className="text-center mb-6 p-4 bg-gray-50 rounded-lg">
+            <div className="text-3xl font-bold text-gray-900 mb-1">
+              {currencySymbol}{price}
+              <span className="text-lg font-normal text-gray-600">/month</span>
+            </div>
+            <p className="text-sm text-gray-600">
+              Cancel anytime • No long-term commitment
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            <button
+              onClick={handleProceedToPayment}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center justify-center space-x-2"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Continue to Payment</span>
+            </button>
+            
+            <button
+              onClick={onClose}
+              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Payment Form */
+        <PaymentForm
+          tier={selectedTier}
+          currency={currency}
+          onSuccess={onSuccess}
+          onBack={handleBackToTier}
+        />
+      )}
+    </>
+  );
+}
+
+export default function PaymentModal({
+  isOpen,
+  onClose,
+  selectedTier,
+  currentTier,
+  currency = 'usd',
+  onSuccess
+}: PaymentModalProps) {
+  const handleClose = () => {
+    onClose();
+  };
+
+  if (!selectedTier) return null;
 
   return (
     <AnimatePresence>
@@ -337,82 +450,16 @@ export default function PaymentModal({
               transition={{ duration: 0.2 }}
               className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-2xl relative"
             >
-              {/* Close Button */}
-              <button
-                onClick={handleClose}
-                className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              {!showPaymentForm ? (
-                /* Tier Confirmation */
-                <div>
-                  <div className="text-center mb-6">
-                    <div className="inline-flex p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl mb-4">
-                      <Zap className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">
-                      {isUpgrade ? 'Upgrade to' : 'Subscribe to'} {selectedTier.tier_display_name}
-                    </h3>
-                    <p className="text-gray-600">
-                      {selectedTier.tier_description}
-                    </p>
-                  </div>
-
-                  {/* Features */}
-                  <div className="space-y-3 mb-6">
-                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                      <div className="flex items-center space-x-2">
-                        <Zap className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium">Monthly XP Allocation</span>
-                      </div>
-                      <span className="text-green-700 font-bold">
-                        {selectedTier.monthly_xp_allocation.toLocaleString()} XP
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="text-center mb-6 p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-gray-900 mb-1">
-                      {currencySymbol}{price}
-                      <span className="text-lg font-normal text-gray-600">/month</span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Cancel anytime • No long-term commitment
-                    </p>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
-                    <button
-                      onClick={handleProceedToPayment}
-                      className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center justify-center space-x-2"
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>Continue to Payment</span>
-                    </button>
-                    
-                    <button
-                      onClick={handleClose}
-                      className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* Payment Form */
-                <Elements stripe={stripePromise}>
-                  <PaymentForm
-                    tier={selectedTier}
-                    currency={currency}
-                    onSuccess={onSuccess}
-                    onBack={handleBackToTier}
-                  />
-                </Elements>
-              )}
+              {/* Wrap everything in Elements to prevent remounting */}
+              <Elements stripe={stripePromise}>
+                <PaymentModalContent
+                  selectedTier={selectedTier}
+                  currentTier={currentTier}
+                  currency={currency}
+                  onSuccess={onSuccess}
+                  onClose={handleClose}
+                />
+              </Elements>
             </motion.div>
           </div>
         </div>

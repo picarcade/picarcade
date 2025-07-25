@@ -364,6 +364,92 @@ async def get_user_analytics(current_user: dict = Depends(get_current_user)):
         logger.error(f"Error fetching user analytics: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics")
 
+@router.post("/cancel")
+async def cancel_subscription(current_user: dict = Depends(get_current_user)):
+    """Cancel user's subscription"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get current subscription
+        subscription = await subscription_service.get_user_subscription(user_id)
+        if not subscription:
+            raise HTTPException(status_code=404, detail="No active subscription found")
+        
+        # Cancel subscription in Stripe
+        success = await subscription_service.cancel_stripe_subscription(user_id)
+        
+        if success:
+            return {"success": True, "message": "Subscription canceled successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error canceling subscription: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+@router.get("/invoices")
+async def get_user_invoices(current_user: dict = Depends(get_current_user)):
+    """Get user's billing history/invoices"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get invoices from Stripe
+        invoices = await subscription_service.get_user_invoices(user_id)
+        
+        return invoices
+        
+    except Exception as e:
+        logger.error(f"Error fetching invoices: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch invoices")
+
+@router.get("/payment-methods")
+async def get_payment_methods(current_user: dict = Depends(get_current_user)):
+    """Get user's payment methods"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get payment methods from Stripe
+        payment_methods = await subscription_service.get_user_payment_methods(user_id)
+        
+        return payment_methods
+        
+    except Exception as e:
+        logger.error(f"Error fetching payment methods: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch payment methods")
+
+@router.post("/change-plan")
+async def change_subscription_plan(
+    request: CreateSubscriptionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change user's subscription plan"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get current subscription
+        subscription = await subscription_service.get_user_subscription(user_id)
+        if not subscription:
+            raise HTTPException(status_code=404, detail="No active subscription found")
+        
+        # Update subscription in Stripe
+        success = await subscription_service.change_subscription_plan(
+            user_id=user_id,
+            new_tier_name=request.tier_name
+        )
+        
+        if success:
+            return {"success": True, "message": "Plan changed successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to change plan")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error changing plan: {e}")
+        raise HTTPException(status_code=500, detail="Failed to change plan")
+
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events"""

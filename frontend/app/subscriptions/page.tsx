@@ -123,7 +123,11 @@ export default function SubscriptionsPage() {
           </div>
 
           <div className="flex items-center space-x-4 ml-auto sm:ml-0">
-            <button className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors">
+            <button 
+              onClick={() => router.push('/subscriptions/manage')}
+              className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors"
+              title="Manage Subscription"
+            >
               <Settings className="w-5 h-5 text-white" />
             </button>
           </div>

@@ -446,6 +446,191 @@ class SubscriptionService:
             
         except Exception as e:
             logger.error(f"Error handling successful payment: {e}")
+    
+    async def cancel_stripe_subscription(self, user_id: str) -> bool:
+        """Cancel a Stripe subscription"""
+        try:
+            # Get user subscription
+            subscription = await self.get_user_subscription(user_id)
+            if not subscription:
+                logger.error(f"No subscription found for user {user_id}")
+                return False
+            
+            # Get Stripe subscription ID from metadata or database
+            stripe_subscription_id = subscription.get("stripe_subscription_id")
+            if not stripe_subscription_id:
+                logger.error(f"No Stripe subscription ID found for user {user_id}")
+                return False
+            
+            # Cancel subscription in Stripe
+            stripe.Subscription.modify(
+                stripe_subscription_id,
+                cancel_at_period_end=True
+            )
+            
+            # Update subscription status in database
+            self.supabase.table("user_subscriptions")\
+                .update({"status": "canceled"})\
+                .eq("user_id", user_id)\
+                .execute()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error canceling Stripe subscription: {e}")
+            return False
+    
+    async def get_user_invoices(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get user's Stripe invoices"""
+        try:
+            # Get user subscription to find Stripe customer ID
+            subscription = await self.get_user_subscription(user_id)
+            if not subscription:
+                return []
+            
+            # Get or create Stripe customer
+            stripe_customer_id = await self.get_stripe_customer_id(user_id)
+            if not stripe_customer_id:
+                return []
+            
+            # Get invoices from Stripe
+            invoices = stripe.Invoice.list(
+                customer=stripe_customer_id,
+                limit=20
+            )
+            
+            # Format invoices for frontend
+            formatted_invoices = []
+            for invoice in invoices.data:
+                formatted_invoices.append({
+                    "id": invoice.id,
+                    "amount_paid": invoice.amount_paid,
+                    "currency": invoice.currency,
+                    "status": invoice.status,
+                    "created": invoice.created,
+                    "hosted_invoice_url": invoice.hosted_invoice_url,
+                    "invoice_pdf": invoice.invoice_pdf,
+                    "period_start": invoice.period_start,
+                    "period_end": invoice.period_end
+                })
+            
+            return formatted_invoices
+            
+        except Exception as e:
+            logger.error(f"Error getting user invoices: {e}")
+            return []
+    
+    async def get_user_payment_methods(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get user's Stripe payment methods"""
+        try:
+            # Get or create Stripe customer
+            stripe_customer_id = await self.get_stripe_customer_id(user_id)
+            if not stripe_customer_id:
+                return []
+            
+            # Get payment methods from Stripe
+            payment_methods = stripe.PaymentMethod.list(
+                customer=stripe_customer_id,
+                type="card"
+            )
+            
+            # Get customer to check default payment method
+            customer = stripe.Customer.retrieve(stripe_customer_id)
+            default_payment_method = customer.invoice_settings.default_payment_method
+            
+            # Format payment methods for frontend
+            formatted_methods = []
+            for pm in payment_methods.data:
+                formatted_methods.append({
+                    "id": pm.id,
+                    "type": pm.type,
+                    "card": {
+                        "brand": pm.card.brand,
+                        "last4": pm.card.last4,
+                        "exp_month": pm.card.exp_month,
+                        "exp_year": pm.card.exp_year
+                    } if pm.card else None,
+                    "is_default": pm.id == default_payment_method
+                })
+            
+            return formatted_methods
+            
+        except Exception as e:
+            logger.error(f"Error getting payment methods: {e}")
+            return []
+    
+    async def change_subscription_plan(self, user_id: str, new_tier_name: str) -> bool:
+        """Change user's subscription plan"""
+        try:
+            # Get current subscription
+            subscription = await self.get_user_subscription(user_id)
+            if not subscription:
+                logger.error(f"No subscription found for user {user_id}")
+                return False
+            
+            # Get new tier information
+            tier_result = self.supabase.table("subscription_tiers")\
+                .select("*")\
+                .eq("tier_name", new_tier_name)\
+                .single()\
+                .execute()
+            
+            if not tier_result.data:
+                logger.error(f"Tier {new_tier_name} not found")
+                return False
+            
+            new_tier = tier_result.data
+            
+            # Get Stripe subscription ID
+            stripe_subscription_id = subscription.get("stripe_subscription_id")
+            if not stripe_subscription_id:
+                logger.error(f"No Stripe subscription ID found for user {user_id}")
+                return False
+            
+            # Get new Stripe price ID
+            new_price_id = new_tier.get("stripe_price_id_aud")  # Default to AUD
+            if not new_price_id:
+                logger.error(f"No Stripe price ID for tier {new_tier_name}")
+                return False
+            
+            # Update subscription in Stripe
+            stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+            stripe.Subscription.modify(
+                stripe_subscription_id,
+                items=[{
+                    'id': stripe_subscription['items']['data'][0].id,
+                    'price': new_price_id,
+                }],
+                proration_behavior='immediate_without_proration'
+            )
+            
+            # Update subscription in database
+            await self.update_user_subscription_from_stripe(user_id, {
+                "items": {"data": [{"price": {"id": new_price_id}}]},
+                "metadata": {"user_id": user_id, "tier_name": new_tier_name}
+            })
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error changing subscription plan: {e}")
+            return False
+    
+    async def get_stripe_customer_id(self, user_id: str) -> Optional[str]:
+        """Get or retrieve Stripe customer ID for user"""
+        try:
+            # Check if we have a customer ID stored
+            subscription = await self.get_user_subscription(user_id)
+            if subscription and subscription.get("stripe_customer_id"):
+                return subscription["stripe_customer_id"]
+            
+            # If no stored customer ID, we might need to create one
+            # This would typically be done during the first subscription creation
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting Stripe customer ID: {e}")
+            return None
 
 # Global subscription service instance
 subscription_service = SubscriptionService() 
