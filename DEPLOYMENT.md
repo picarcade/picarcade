@@ -48,7 +48,7 @@ DEBUG=False
 
 ```bash
 # Backend API URL - THIS FIXES THE XP LOADING ISSUE
-NEXT_PUBLIC_API_URL=https://api.picarcade.ai
+NEXT_PUBLIC_API_URL=https://picarcade.onrender.com
 
 # Supabase Configuration  
 NEXT_PUBLIC_SUPABASE_URL=https://izfjglgvaqrqaywfniwi.supabase.co
@@ -65,7 +65,7 @@ NEXT_PUBLIC_PRODUCTION_URL=https://picarcade.ai
 
 1. **Backend Deployment**:
    - Deploy to Render/Railway with the environment variables above
-   - Ensure the API is accessible at `https://api.picarcade.ai`
+   - Ensure the API is accessible at `https://picarcade.onrender.com`
 
 2. **Frontend Deployment**:
    - Set environment variables in Vercel dashboard
@@ -79,8 +79,8 @@ NEXT_PUBLIC_PRODUCTION_URL=https://picarcade.ai
 
 ## Domain Configuration
 
-- **Frontend**: `https://picarcade.ai`
-- **Backend API**: `https://api.picarcade.ai`
+- **Frontend**: `https://picarcade.ai` (and `https://www.picarcade.ai`)
+- **Backend API**: `https://picarcade.onrender.com`
 - **Database**: Supabase hosted
 
 ## Common Issues
@@ -94,4 +94,5 @@ NEXT_PUBLIC_PRODUCTION_URL=https://picarcade.ai
 - ✅ Fixed ResponseValidationError in subscription endpoint
 - ✅ Added proper handling for users without subscription tiers  
 - ✅ Updated environment configuration documentation
-- 🔄 **Next**: Set `NEXT_PUBLIC_API_URL=https://api.picarcade.ai` in Vercel dashboard 
+- 🔄 **URGENT**: Set `NEXT_PUBLIC_API_URL=https://picarcade.onrender.com` in Vercel dashboard
+- ⚠️ **Important**: The `.env.local` file is gitignored, so you MUST update Vercel environment variables manually 
