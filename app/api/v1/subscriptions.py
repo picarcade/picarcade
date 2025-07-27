@@ -89,22 +89,37 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
             if initial_balance_created:
                 subscription = await subscription_service.get_user_subscription(user_id)
         
-        if subscription and subscription.get("subscription_tiers"):
-            tier = subscription["subscription_tiers"]
-            return SubscriptionResponse(
-                id=subscription["id"],
-                tier_name=tier["tier_name"],
-                tier_level=tier["tier_level"],
-                tier_display_name=tier["tier_display_name"],
-                status=subscription["status"],
-                xp_balance=subscription["xp_balance"],
-                xp_allocated_this_period=subscription["xp_allocated_this_period"],
-                xp_used_this_period=subscription["xp_used_this_period"],
-                current_period_end=subscription.get("current_period_end"),
-    
-            )
+        if subscription:
+            # Handle case where user has subscription but no tier assigned
+            tier = subscription.get("subscription_tiers")
+            if tier:
+                return SubscriptionResponse(
+                    id=subscription["id"],
+                    tier_name=tier["tier_name"],
+                    tier_level=tier["tier_level"],
+                    tier_display_name=tier["tier_display_name"],
+                    status=subscription["status"],
+                    xp_balance=subscription["xp_balance"],
+                    xp_allocated_this_period=subscription["xp_allocated_this_period"],
+                    xp_used_this_period=subscription["xp_used_this_period"],
+                    current_period_end=subscription.get("current_period_end"),
+                )
+            else:
+                # User has subscription but no tier (free tier/initial setup)
+                return SubscriptionResponse(
+                    id=subscription["id"],
+                    tier_name="free",
+                    tier_level=0,
+                    tier_display_name="Free Tier",
+                    status=subscription["status"],
+                    xp_balance=subscription["xp_balance"],
+                    xp_allocated_this_period=subscription["xp_allocated_this_period"],
+                    xp_used_this_period=subscription["xp_used_this_period"],
+                    current_period_end=subscription.get("current_period_end"),
+                )
         
-        return None
+        # If no subscription could be created or retrieved, return a default free tier
+        raise HTTPException(status_code=404, detail="Could not create or retrieve user subscription")
         
     except Exception as e:
         logger.error(f"Error fetching user subscription: {e}")
