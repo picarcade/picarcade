@@ -81,18 +81,27 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
     """Get current user's subscription details"""
     try:
         user_id = current_user["id"]
+        logger.info(f"[DEBUG] Getting subscription for user: {user_id}")
+        
         subscription = await subscription_service.get_user_subscription(user_id)
+        logger.info(f"[DEBUG] Initial subscription result: {subscription is not None}")
         
         if not subscription:
+            logger.info(f"[DEBUG] No subscription found, creating initial XP balance for user: {user_id}")
             # Create initial XP balance for new users
             initial_balance_created = await subscription_service.create_initial_xp_balance(user_id)
+            logger.info(f"[DEBUG] Initial balance creation result: {initial_balance_created}")
+            
             if initial_balance_created:
                 subscription = await subscription_service.get_user_subscription(user_id)
+                logger.info(f"[DEBUG] Subscription after creation: {subscription is not None}")
         
         if subscription:
+            logger.info(f"[DEBUG] Processing subscription data: {list(subscription.keys()) if subscription else 'None'}")
             # Handle case where user has subscription but no tier assigned
             tier = subscription.get("subscription_tiers")
             if tier:
+                logger.info(f"[DEBUG] User has tier: {tier.get('tier_name', 'unknown')}")
                 return SubscriptionResponse(
                     id=subscription["id"],
                     tier_name=tier["tier_name"],
@@ -105,6 +114,7 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
                     current_period_end=subscription.get("current_period_end"),
                 )
             else:
+                logger.info(f"[DEBUG] User has subscription but no tier, returning free tier")
                 # User has subscription but no tier (free tier/initial setup)
                 return SubscriptionResponse(
                     id=subscription["id"],
@@ -118,11 +128,14 @@ async def get_current_subscription(current_user: dict = Depends(get_current_user
                     current_period_end=subscription.get("current_period_end"),
                 )
         
+        logger.error(f"[DEBUG] No subscription could be created or retrieved for user: {user_id}")
         # If no subscription could be created or retrieved, return a default free tier
         raise HTTPException(status_code=404, detail="Could not create or retrieve user subscription")
         
     except Exception as e:
-        logger.error(f"Error fetching user subscription: {e}")
+        logger.error(f"Error fetching user subscription for {user_id}: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception details: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch subscription")
 
 @router.post("/create")

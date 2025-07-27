@@ -76,28 +76,37 @@ class SubscriptionService:
     ) -> bool:
         """Create initial XP balance for new users"""
         try:
+            logger.info(f"[DEBUG] Creating initial XP balance for user {user_id}")
+            
             # Create initial user subscription record with XP balance
-            result = self.supabase.table("user_subscriptions").insert({
+            insert_data = {
                 "user_id": user_id,
                 "xp_balance": initial_xp,
                 "xp_allocated_this_period": initial_xp,
                 "xp_used_this_period": 0,
                 "status": "active",
                 "tier_id": None,  # No subscription tier yet
-                "current_level": 0  # No tier level
-            }).execute()
+            }
+            logger.info(f"[DEBUG] Inserting data: {insert_data}")
+            
+            result = self.supabase.table("user_subscriptions").insert(insert_data).execute()
+            logger.info(f"[DEBUG] Insert result success: {result.data is not None}")
             
             # Create XP allocation transaction
+            logger.info(f"[DEBUG] Creating XP allocation transaction")
             await self._create_xp_allocation_transaction(
                 user_id,
                 initial_xp,
                 "Welcome bonus - initial XP allocation"
             )
+            logger.info(f"[DEBUG] XP allocation transaction created successfully")
             
             return True
             
         except Exception as e:
             logger.error(f"Error creating initial XP balance for {user_id}: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception details: {str(e)}")
             return False
     
     async def check_user_tier_permission(
