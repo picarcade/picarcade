@@ -33,6 +33,7 @@ export interface HistoryItem {
   model_used: string
   success: string
   output_url?: string
+  thumbnail_url?: string
   created_at: string
   execution_time?: number
 }

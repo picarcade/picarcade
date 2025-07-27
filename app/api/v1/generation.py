@@ -155,6 +155,28 @@ async def generate_content(
             "model": flow_result.model_to_use,
             "enhanced_prompt_length": len(flow_result.enhanced_prompt)
         })
+
+        # Update request state with correct generation type from simplified flow
+        if hasattr(http_request.state, 'generation_type'):
+            # Override middleware's generation type with the correct one from simplified flow
+            correct_generation_type = flow_result.prompt_type.value
+            original_generation_type = getattr(http_request.state, 'generation_type', 'unknown')
+            
+            if correct_generation_type != original_generation_type:
+                api_logger.info(f"🔄 GENERATION: Updating generation type from {original_generation_type} to {correct_generation_type}")
+                http_request.state.generation_type = correct_generation_type
+                
+                # Also update XP cost based on correct generation type
+                from app.services.subscription_service import subscription_service
+                user_tier = getattr(http_request.state, 'user_tier', 0)
+                correct_xp_cost = await subscription_service.get_xp_cost_for_generation(
+                    correct_generation_type, user_tier
+                )
+                original_xp_cost = getattr(http_request.state, 'xp_cost', 0)
+                
+                if correct_xp_cost != original_xp_cost:
+                    api_logger.info(f"🔄 GENERATION: Updating XP cost from {original_xp_cost} to {correct_xp_cost}")
+                    http_request.state.xp_cost = correct_xp_cost
         
         # Handle reference processing if needed
         reference_images = []
@@ -769,6 +791,8 @@ async def generate_content(
                 result.metadata = {}
             result.metadata["session_id"] = effective_session_id
         
+
+        
         # Deduct XP for successful generation
         api_logger.info(f"🔍 GENERATION: Checking XP deduction - Success: {result.success}, Has XP Cost: {hasattr(http_request.state, 'xp_cost')}, Has Gen Type: {hasattr(http_request.state, 'generation_type')}")
         
@@ -789,13 +813,14 @@ async def generate_content(
                 })
                 
                 deduction_success = await subscription_service.deduct_xp_for_generation(
-                    user_id=str(request.user_id),  # Convert to string for database function
+                    user_id=request.user_id,  # Pass UUID directly to database function
                     generation_id=generation_id,
                     generation_type=generation_type,
                     model_used=result.model_used or "unknown",
                     xp_cost=xp_cost,
                     actual_cost_usd=0.0,  # We'll implement cost tracking later
-                    routing_decision=routing_decision.routing_logic if 'routing_decision' in locals() and routing_decision else {}
+                    routing_decision=getattr(routing_decision, 'routing_logic', {}) if 'routing_decision' in locals() and routing_decision else {},
+                    prompt=request.prompt
                 )
                 
                 if deduction_success:
@@ -888,6 +913,7 @@ async def get_user_history(
                 "model_used": h["model_used"],
                 "success": h["success"],
                 "output_url": h["output_url"],
+                "thumbnail_url": h.get("thumbnail_url"),
                 "created_at": h["created_at"],
                 "execution_time": h["execution_time"]
             }
@@ -1004,13 +1030,43 @@ async def store_generation_result(
     """Store generation result in Supabase for learning and history"""
     
     try:
+        from app.services.storage import storage_service
+        
+        output_url = result.output_url
+        thumbnail_url = None
+        
+        # Check if the output_url is from an external service that might expire
+        if output_url and result.success:
+            external_domains = ['replicate.delivery', 'runway.com', 'storage.googleapis.com', 'cloudfront.net']
+            is_external = any(domain in output_url for domain in external_domains)
+            
+            if is_external:
+                print(f"Downloading and storing external image: {output_url}")
+                
+                # Download and store the image permanently with thumbnail
+                success, file_path, permanent_url, thumb_url = await storage_service.download_and_store_image(
+                    image_url=output_url,
+                    user_id=request.user_id,
+                    resize_max=2048,
+                    thumbnail_size=256
+                )
+                
+                if success:
+                    output_url = permanent_url
+                    thumbnail_url = thumb_url
+                    print(f"Successfully stored permanent image: {permanent_url}")
+                    print(f"Generated thumbnail: {thumb_url}")
+                else:
+                    print(f"Failed to store permanent image, keeping original URL")
+        
         history_data = {
             "generation_id": result.generation_id,
             "user_id": request.user_id,
             "prompt": request.prompt,
             "intent": intent_analysis.detected_intent.value if intent_analysis else "unknown",
             "model_used": result.model_used,
-            "output_url": result.output_url,
+            "output_url": output_url,
+            "thumbnail_url": thumbnail_url,
             "success": "success" if result.success else "failed",
             "execution_time": int(result.execution_time * 1000) if result.execution_time else None,
             "metadata": {

@@ -515,7 +515,8 @@ CONTEXT FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
 - Actions involving the referenced person: "walking", "sitting", "standing", "playing"
 - Spatial relationships: "next to", "in front of", "behind", "with"
 - Scene integration: "to the scene", "in the background", "in the image"
-- **WARNING: Do NOT use EDIT_IMAGE_ADD_NEW for generic "add a bear", "add a car" etc. without actual reference images. These are EDIT_IMAGE.**
+- **CRITICAL: ONLY use EDIT_IMAGE_ADD_NEW when uploaded_image=True OR referenced_image=True**
+- **WARNING: Do NOT use EDIT_IMAGE_ADD_NEW for generic "add a bear", "add a car", "add nats" etc. without actual reference images. These are EDIT_IMAGE.**
 
 **KEY INDICATORS FOR EDIT_IMAGE_REF:**
 - Style/feature transfers: "hair like", "dress like", "face from", "style of"
@@ -538,8 +539,9 @@ TASK:
 2. Enhance the prompt according to the enhancement rules
 3. For EDIT_IMAGE_REF: Carefully analyze which @reference is the TARGET (subject being changed) vs SOURCE (providing the style/feature)
 4. For EDIT_IMAGE_ADD_NEW: Focus on spatial placement and natural integration of new elements  
-5. **CRITICAL: If only active_image=True (no uploads/references), ALWAYS use EDIT_IMAGE for any editing request, even if it mentions "adding" things**
-6. Provide reasoning for your classification and enhancement decisions
+5. **CRITICAL: If only active_image=True (no uploads/references), ALWAYS use EDIT_IMAGE for any editing request, even if it mentions "adding" things like "add nats", "add a car", etc.**
+6. **EDIT_IMAGE_ADD_NEW requires uploaded_image=True OR referenced_image=True - never use it when both are False**
+7. Provide reasoning for your classification and enhancement decisions
 
 IMPORTANT FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
 - EDIT_IMAGE_REF: Always identify the main subject (TARGET) that is being edited
@@ -751,22 +753,28 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             enhanced_prompt = user_prompt + ". Preserve all facial features, likeness, and identity of referenced people exactly. Maintain all other aspects of the original image."
         elif active_image and not uploaded_image and not referenced_image:
             # Only working image - this is always EDIT_IMAGE (basic image editing)
+            # Even if prompt contains "add" keywords, without reference images it's just editing
             prompt_type = "EDIT_IMAGE"
             enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
         else:
             # active_image + (uploaded_image or referenced_image)
+            # CRITICAL: Only use ADD_NEW/REF when we actually have reference images
             # Check for ADD_NEW vs REF scenarios
             add_keywords = ["add", "place", "put", "include", "insert", "bring", "introduce"]
             has_add_intent = any(keyword in user_prompt.lower() for keyword in add_keywords)
             
-            if has_add_intent:
-                # Adding new elements to existing scene
+            if has_add_intent and (uploaded_image or referenced_image):
+                # Adding new elements to existing scene (only with actual references)
                 prompt_type = "EDIT_IMAGE_ADD_NEW"
                 enhanced_prompt = user_prompt
-            else:
+            elif uploaded_image or referenced_image:
                 # Transferring features/styles between images
                 prompt_type = "EDIT_IMAGE_REF"
                 enhanced_prompt = user_prompt
+            else:
+                # Fallback to basic edit if no references found
+                prompt_type = "EDIT_IMAGE"
+                enhanced_prompt = user_prompt + ". Maintain all other aspects of the original image."
         
         # Get model for type
         model_to_use = self._get_model_for_type(prompt_type, 0)

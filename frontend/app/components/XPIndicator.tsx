@@ -15,26 +15,17 @@ interface Subscription {
 
 interface XPIndicatorProps {
   currentXP: number;
-  generationCost?: number;
-  generationType?: string;
   isGenerating?: boolean;
-  onInsufficientXP?: () => void;
   className?: string;
 }
 
-
-
 export default function XPIndicator({
   currentXP,
-  generationCost = 0,
-  generationType = 'generation',
   isGenerating = false,
-  onInsufficientXP,
   className = ''
 }: XPIndicatorProps) {
   const router = useRouter();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [showWarning, setShowWarning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [animatedXP, setAnimatedXP] = useState(currentXP);
 
@@ -48,18 +39,6 @@ export default function XPIndicator({
       setAnimatedXP(currentXP);
     }
   }, [currentXP, animatedXP]);
-
-  useEffect(() => {
-    // Show warning if XP is insufficient
-    if (generationCost > 0 && currentXP < generationCost) {
-      setShowWarning(true);
-      if (onInsufficientXP) {
-        onInsufficientXP();
-      }
-    } else {
-      setShowWarning(false);
-    }
-  }, [currentXP, generationCost, onInsufficientXP]);
 
   const loadSubscriptionData = async () => {
     try {
@@ -81,15 +60,10 @@ export default function XPIndicator({
       setIsLoading(false);
     }
   };
-
-  const hasInsufficientXP = generationCost > 0 && currentXP < generationCost;
   
   // Calculate health bar percentage
   const maxXP = subscription?.xp_allocated_this_period || 1000; // fallback to 1000 if no subscription
   const healthPercentage = Math.max(0, Math.min(100, (currentXP / maxXP) * 100));
-  const afterCostPercentage = generationCost > 0 
-    ? Math.max(0, Math.min(100, ((currentXP - generationCost) / maxXP) * 100))
-    : healthPercentage;
 
   // Determine health bar colors based on percentage
   const getHealthBarColor = (percentage: number) => {
@@ -105,7 +79,6 @@ export default function XPIndicator({
   };
 
   const getXPStatusColor = () => {
-    if (hasInsufficientXP) return 'text-red-400';
     if (healthPercentage <= 30) return 'text-red-400';
     if (healthPercentage <= 60) return 'text-orange-400';
     return 'text-green-400';
@@ -124,7 +97,7 @@ export default function XPIndicator({
       {/* Health Bar Container */}
       <motion.div
         className={`flex items-center space-x-3 px-4 py-2 rounded-xl bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 ${
-          hasInsufficientXP ? 'border-red-500/50 bg-red-900/20' : ''
+          healthPercentage <= 30 ? 'border-red-500/50 bg-red-900/20' : ''
         }`}
         animate={isGenerating ? { scale: [1, 1.02, 1] } : {}}
         transition={{ duration: 2, repeat: Infinity }}
@@ -147,16 +120,6 @@ export default function XPIndicator({
                 transition={{ duration: 0.5, ease: "easeOut" }}
               />
               
-              {/* Preview of XP after cost */}
-              {generationCost > 0 && afterCostPercentage !== healthPercentage && (
-                <motion.div
-                  className={`absolute left-0 top-0 h-full bg-gradient-to-r ${getHealthBarColor(afterCostPercentage)} rounded-full opacity-50`}
-                  initial={{ width: `${healthPercentage}%` }}
-                  animate={{ width: `${afterCostPercentage}%` }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                />
-              )}
-              
               {/* Shine effect */}
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent rounded-full"
@@ -173,21 +136,11 @@ export default function XPIndicator({
             </div>
           </div>
         </div>
-
-        {/* Generation Cost Preview */}
-        {generationCost > 0 && (
-          <div className="flex items-center space-x-1 text-xs">
-            <span className="text-gray-400">-</span>
-            <span className={`font-medium ${hasInsufficientXP ? 'text-red-400' : 'text-gray-300'}`}>
-              {generationCost}
-            </span>
-          </div>
-        )}
       </motion.div>
 
       {/* Warning for insufficient XP */}
-      <AnimatePresence>
-        {showWarning && (
+      {healthPercentage < 30 && (
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -204,11 +157,11 @@ export default function XPIndicator({
               Get More XP
             </button>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      )}
 
       {/* Low XP warning for balance under 30% */}
-      {healthPercentage < 30 && healthPercentage > 0 && !hasInsufficientXP && (
+      {healthPercentage < 30 && healthPercentage > 0 && (
         <motion.button
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -221,7 +174,7 @@ export default function XPIndicator({
       )}
 
       {/* Medium XP warning for balance under 60% */}
-      {healthPercentage < 60 && healthPercentage >= 30 && !hasInsufficientXP && (
+      {healthPercentage < 60 && healthPercentage >= 30 && (
         <motion.button
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -231,13 +184,6 @@ export default function XPIndicator({
           <Plus className="w-3 h-3" />
           <span className="text-xs">Top Up</span>
         </motion.button>
-      )}
-
-      {/* Generation type indicator */}
-      {generationType && generationCost > 0 && (
-        <div className="text-xs text-gray-500 hidden sm:block">
-          {generationType.replace('_', ' ').toLowerCase()}
-        </div>
       )}
     </div>
   );

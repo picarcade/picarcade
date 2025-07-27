@@ -209,14 +209,19 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                           </div>
                         ) : (
                           <img
-                            src={item.output_url}
+                            src={item.thumbnail_url || item.output_url}
                             alt={item.prompt}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement
-                              target.style.display = 'none'
-                              target.parentElement?.classList.add('flex', 'items-center', 'justify-center')
-                              target.parentElement!.innerHTML = '<div class="w-8 h-8 text-gray-400"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>'
+                              // If thumbnail fails and we have a different output_url, try that
+                              if (item.thumbnail_url && item.output_url && target.src === item.thumbnail_url) {
+                                target.src = item.output_url
+                              } else {
+                                target.style.display = 'none'
+                                target.parentElement?.classList.add('flex', 'items-center', 'justify-center')
+                                target.parentElement!.innerHTML = '<div class="w-8 h-8 text-gray-400"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>'
+                              }
                             }}
                           />
                         )}

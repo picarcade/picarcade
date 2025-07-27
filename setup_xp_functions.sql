@@ -56,7 +56,8 @@ CREATE OR REPLACE FUNCTION deduct_xp_for_generation(
     p_model_used TEXT,
     p_xp_cost INTEGER,
     p_actual_cost_usd DECIMAL DEFAULT 0.0,
-    p_routing_decision JSONB DEFAULT '{}'::jsonb
+    p_routing_decision JSONB DEFAULT '{}'::jsonb,
+    p_prompt TEXT DEFAULT NULL
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -103,7 +104,14 @@ BEGIN
         'deduction',
         -p_xp_cost,
         new_balance,
-        'Generation: ' || p_generation_type || ' using ' || p_model_used,
+        CASE 
+            WHEN p_prompt IS NOT NULL AND LENGTH(p_prompt) > 0 THEN
+                CASE 
+                    WHEN LENGTH(p_prompt) > 200 THEN LEFT(p_prompt, 200) || '...'
+                    ELSE p_prompt
+                END
+            ELSE 'Generation: ' || p_generation_type || ' using ' || p_model_used
+        END,
         p_generation_id,
         p_generation_type,
         p_model_used,

@@ -6,7 +6,7 @@ Handles user subscriptions, tier management, and Stripe integration
 import logging
 import os
 import stripe
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -144,13 +144,14 @@ class SubscriptionService:
     
     async def deduct_xp_for_generation(
         self,
-        user_id: str,
+        user_id: Union[str, Any],  # Can be str or UUID
         generation_id: str,
         generation_type: str,
         model_used: str,
         xp_cost: int,
         actual_cost_usd: float,
-        routing_decision: Dict[str, Any] = None
+        routing_decision: Dict[str, Any] = None,
+        prompt: str = None
     ) -> bool:
         """Deduct XP for a generation"""
         try:
@@ -163,7 +164,8 @@ class SubscriptionService:
                     "p_model_used": model_used,
                     "p_xp_cost": xp_cost,
                     "p_actual_cost_usd": actual_cost_usd,
-                    "p_routing_decision": routing_decision or {}
+                    "p_routing_decision": routing_decision or {},
+                    "p_prompt": prompt
                 }
             ).execute()
             

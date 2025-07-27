@@ -6,6 +6,7 @@ from supabase import create_client, Client
 from app.core.config import settings
 from PIL import Image
 import time
+import aiohttp
 
 class SupabaseStorageService:
     """Service for handling file uploads to Supabase Storage"""
@@ -177,6 +178,119 @@ class SupabaseStorageService:
             print(f"Error uploading image with thumbnail: {e}")
             return False, None, None, str(e)
 
+    async def download_and_store_image(self, 
+                                     image_url: str, 
+                                     user_id: str = None,
+                                     resize_max: Optional[int] = 2048,
+                                     thumbnail_size: int = 256) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
+        """
+        Download an image or video from external URL and store it permanently with thumbnail
+        
+        Args:
+            image_url: External image/video URL to download
+            user_id: Optional user ID for organizing files
+            resize_max: Maximum dimension for main image resizing (videos are stored as-is)
+            thumbnail_size: Maximum dimension for thumbnail (videos get a placeholder)
+            
+        Returns:
+            Tuple of (success, file_path, public_url, thumbnail_url)
+        """
+        
+        try:
+            # Download the file
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as response:
+                    if response.status != 200:
+                        print(f"Failed to download file: HTTP {response.status}")
+                        return False, None, None, None
+                    
+                    content = await response.read()
+                    content_type = response.headers.get('content-type', 'application/octet-stream')
+            
+            # Determine if it's a video or image
+            is_video = any(vid_type in content_type.lower() or image_url.lower().endswith(ext) 
+                          for vid_type in ['video/', 'mp4', 'webm', 'mov', 'avi']
+                          for ext in ['.mp4', '.webm', '.mov', '.avi'])
+            
+            # Generate appropriate filename
+            if is_video:
+                file_extension = 'mp4'
+                if '.webm' in image_url.lower() or 'webm' in content_type:
+                    file_extension = 'webm'
+                elif '.mov' in image_url.lower() or 'quicktime' in content_type:
+                    file_extension = 'mov'
+                content_type = f'video/{file_extension}'
+            else:
+                # Validate image content
+                if not self._is_valid_image(content):
+                    print("Downloaded content is not a valid image")
+                    return False, None, None, None
+                
+                file_extension = 'jpg'
+                if 'png' in content_type:
+                    file_extension = 'png'
+                elif 'webp' in content_type:
+                    file_extension = 'webp'
+            
+            unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+            
+            # Create folder structure
+            timestamp = int(time.time())
+            folder_path = f"uploads/{timestamp // 86400}"  # Group by day
+            if user_id:
+                folder_path = f"uploads/{user_id}/{timestamp // 86400}"
+            
+            file_path = f"{folder_path}/{unique_filename}"
+            thumbnail_path = f"{folder_path}/thumbs/{unique_filename}"
+            
+            # Process content based on type
+            if is_video:
+                # Store video as-is, create a placeholder thumbnail
+                thumbnail_content = self._create_video_placeholder_thumbnail(thumbnail_size)
+            else:
+                # Resize main image if needed
+                if resize_max:
+                    content = self._resize_image(content, resize_max)
+                # Generate thumbnail
+                thumbnail_content = self._generate_thumbnail(content, thumbnail_size)
+            
+            # Upload main file
+            main_result = self.supabase.storage.from_(self.bucket_name).upload(
+                path=file_path,
+                file=content,
+                file_options={
+                    "content-type": content_type,
+                    "cache-control": "3600",
+                    "upsert": "true"
+                }
+            )
+            
+            # Upload thumbnail
+            thumb_result = self.supabase.storage.from_(self.bucket_name).upload(
+                path=thumbnail_path,
+                file=thumbnail_content,
+                file_options={
+                    "content-type": "image/jpeg",
+                    "cache-control": "3600",
+                    "upsert": "true"
+                }
+            )
+            
+            if main_result and thumb_result:
+                # Get public URLs
+                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                thumbnail_url = self.supabase.storage.from_(self.bucket_name).get_public_url(thumbnail_path)
+                print(f"Successfully stored {'video' if is_video else 'image'}: {public_url}")
+                print(f"Generated thumbnail: {thumbnail_url}")
+                return True, file_path, public_url, thumbnail_url
+            else:
+                print("Failed to upload file or thumbnail")
+                return False, None, None, None
+                
+        except Exception as e:
+            print(f"Error downloading and storing file: {e}")
+            return False, None, None, None
+
     def _generate_thumbnail(self, content: bytes, max_dimension: int) -> bytes:
         """Generate thumbnail from image content"""
         try:
@@ -275,6 +389,41 @@ class SupabaseStorageService:
     def get_public_url(self, file_path: str) -> str:
         """Get public URL for a stored image"""
         return self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+
+    def _create_video_placeholder_thumbnail(self, max_dimension: int) -> bytes:
+        """Create a placeholder thumbnail for video files"""
+        try:
+            # Create a simple placeholder image with a play icon
+            placeholder = Image.new('RGB', (max_dimension, max_dimension), (64, 64, 64))
+            
+            # Add a simple play triangle in the center
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(placeholder)
+            
+            # Calculate triangle points for play icon
+            center_x, center_y = max_dimension // 2, max_dimension // 2
+            triangle_size = max_dimension // 4
+            
+            triangle_points = [
+                (center_x - triangle_size // 2, center_y - triangle_size // 2),
+                (center_x - triangle_size // 2, center_y + triangle_size // 2),
+                (center_x + triangle_size // 2, center_y)
+            ]
+            
+            draw.polygon(triangle_points, fill=(255, 255, 255))
+            
+            # Save as JPEG
+            output = io.BytesIO()
+            placeholder.save(output, format='JPEG', quality=85, optimize=True)
+            return output.getvalue()
+            
+        except Exception as e:
+            print(f"Error creating video placeholder: {e}")
+            # Return a simple gray square as fallback
+            fallback = Image.new('RGB', (max_dimension, max_dimension), (128, 128, 128))
+            output = io.BytesIO()
+            fallback.save(output, format='JPEG', quality=85)
+            return output.getvalue()
 
 # Global storage service instance
 storage_service = SupabaseStorageService() 

@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import XPBalance from '../../components/XPBalance';
+import UsageHistory from '../../components/UsageHistory';
 
 // Dynamically import components to avoid SSR issues
 const PaymentModal = dynamic(() => import('../../components/PaymentModal'), { ssr: false });
@@ -429,14 +430,8 @@ export default function SubscriptionManagePage() {
               showDetails={true}
             />
             
-            {/* Usage Analytics would go here */}
-            <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6">
-              <h2 className="text-xl font-bold text-white mb-4">Usage Analytics</h2>
-              <div className="text-center py-8 text-gray-400">
-                <TrendingUp className="w-12 h-12 mx-auto mb-4" />
-                <p>Detailed usage analytics coming soon</p>
-              </div>
-            </div>
+            {/* Usage History */}
+            <UsageHistory />
           </div>
         )}
 

@@ -46,8 +46,8 @@ const PerplexityInterface = () => {
   const [taggedImages, setTaggedImages] = useState<Set<string>>(new Set());
   const [imageTagMap, setImageTagMap] = useState<Map<string, string>>(new Map());
   const [currentXP, setCurrentXP] = useState<number>(0);
-  const [generationCost, setGenerationCost] = useState<number>(0);
-  const [currentGenerationType, setCurrentGenerationType] = useState<string>('');
+
+
   const [xpNotification, setXpNotification] = useState<{
     show: boolean;
     amount: number;
@@ -184,36 +184,9 @@ const PerplexityInterface = () => {
 
     // Check XP cost before generation
     try {
-      const token = localStorage.getItem('access_token');
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      // Determine generation type based on uploaded images and content
-      let genType = 'NEW_IMAGE';
-      if (uploadedImages.length > 0) {
-        genType = 'EDIT_IMAGE_REF';
-      }
-      setCurrentGenerationType(genType);
-
-      // Get XP cost for this generation
-      const costResponse = await fetch(`${baseUrl}/api/v1/subscriptions/xp/cost/${genType}`, { headers });
-      if (costResponse.ok) {
-        const costData = await costResponse.json();
-        const cost = costData.xp_cost || 0;
-        setGenerationCost(cost);
-
-        // Check if user has sufficient XP
-        if (currentXP < cost) {
-          // Redirect to subscriptions page for insufficient credits
-          router.push('/subscriptions');
-          return;
-        }
-      }
+      // Pre-generation setup
     } catch (error) {
-      console.error('Error checking XP cost:', error);
+      console.error('Error in generation:', error);
     }
 
     setIsGenerating(true);
@@ -266,9 +239,8 @@ const PerplexityInterface = () => {
         // Refresh history to show the new generation
         setHistoryRefreshTrigger(prev => prev + 1);
         
-        // Reset generation cost for next generation
-        setGenerationCost(0);
-        setCurrentGenerationType('');
+
+
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -582,17 +554,7 @@ const PerplexityInterface = () => {
             {user && (
               <XPIndicator
                 currentXP={currentXP}
-                generationCost={generationCost}
-                generationType={currentGenerationType}
                 isGenerating={isGenerating}
-                onInsufficientXP={() => {
-                  setXpNotification({
-                    show: true,
-                    amount: generationCost,
-                    type: 'loss',
-                    reason: 'Insufficient XP for generation'
-                  });
-                }}
               />
             )}
 

@@ -11,6 +11,7 @@ import re
 
 from app.services.subscription_service import subscription_service
 from app.services.model_routing_service import model_routing_service
+from app.services.session_manager import session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +55,18 @@ class TierPermissionMiddleware:
             # Extract user from request
             user_id = await self._extract_user_id(request)
             if not user_id:
+                logger.info(f"⚪ MIDDLEWARE: No user ID found, proceeding without tier validation")
                 return await call_next(request)  # Let auth middleware handle it
+            
+            logger.info(f"🔍 MIDDLEWARE: Found user ID: {user_id}")
             
             # Determine generation type from request
             generation_type = await self._determine_generation_type(request)
             if not generation_type:
+                logger.info(f"⚪ MIDDLEWARE: Could not determine generation type, proceeding")
                 return await call_next(request)  # Can't determine type, proceed
+            
+            logger.info(f"🔍 MIDDLEWARE: Determined generation type: {generation_type}")
             
             # Check tier permissions
             has_permission = await subscription_service.check_user_tier_permission(
@@ -67,6 +74,7 @@ class TierPermissionMiddleware:
             )
             
             if not has_permission:
+                logger.warning(f"❌ MIDDLEWARE: User {user_id} lacks permission for {generation_type}")
                 return JSONResponse(
                     status_code=403,
                     content={
@@ -80,6 +88,7 @@ class TierPermissionMiddleware:
             # Check XP balance
             subscription = await subscription_service.get_user_subscription(user_id)
             if not subscription:
+                logger.warning(f"❌ MIDDLEWARE: No subscription found for user {user_id}")
                 return JSONResponse(
                     status_code=402,
                     content={
@@ -96,6 +105,7 @@ class TierPermissionMiddleware:
             
             xp_balance = subscription.get("xp_balance", 0)
             if xp_balance < xp_cost:
+                logger.warning(f"❌ MIDDLEWARE: Insufficient XP for user {user_id} - Need {xp_cost}, have {xp_balance}")
                 return JSONResponse(
                     status_code=402,
                     content={
@@ -118,7 +128,7 @@ class TierPermissionMiddleware:
             return await call_next(request)
             
         except Exception as e:
-            logger.error(f"Error in tier permission middleware: {e}")
+            logger.error(f"❌ MIDDLEWARE: Error in tier permission middleware: {e}")
             # Don't block request on middleware errors
             return await call_next(request)
     
@@ -143,20 +153,31 @@ class TierPermissionMiddleware:
         return False
     
     async def _extract_user_id(self, request: Request) -> Optional[str]:
-        """Extract user ID from request"""
+        """Extract user ID from request using the same logic as get_current_user"""
         try:
-            # Try to get from Authorization header
+            # Get Authorization header
             auth_header = request.headers.get("authorization")
             if not auth_header or not auth_header.startswith("Bearer "):
+                logger.info(f"⚪ MIDDLEWARE: No valid Authorization header found")
                 return None
             
-            # This would typically involve JWT decoding
-            # For now, we'll let the endpoint handle auth and get user from there
-            # In a real implementation, you'd decode the JWT here
-            return None
+            # Extract the token
+            access_token = auth_header.split(" ", 1)[1]
+            logger.info(f"🔍 MIDDLEWARE: Extracted token: {access_token[:20]}...")
+            
+            # Use session manager to validate token and get user (same as get_current_user)
+            user = await session_manager.get_user_from_token(access_token)
+            
+            if not user:
+                logger.info(f"⚪ MIDDLEWARE: Token validation failed - no user returned")
+                return None
+            
+            user_id = user.get('id')
+            logger.info(f"✅ MIDDLEWARE: User validated successfully: {user_id}")
+            return user_id
             
         except Exception as e:
-            logger.error(f"Error extracting user ID: {e}")
+            logger.error(f"❌ MIDDLEWARE: Error extracting user ID: {e}")
             return None
     
     async def _determine_generation_type(self, request: Request) -> Optional[str]:
@@ -175,42 +196,59 @@ class TierPermissionMiddleware:
             elif "/image_to_video" in path:
                 return "IMAGE_TO_VIDEO"
             
-            # Try to get from request body
-            if hasattr(request, "_body"):
-                body = await request.body()
-                if body:
-                    import json
-                    try:
-                        data = json.loads(body)
-                        
-                        # Check for generation_type field
-                        if "generation_type" in data:
-                            return data["generation_type"]
-                        
-                        # Check for intent field
-                        if "intent" in data:
-                            intent = data["intent"]
-                            return self.generation_type_mapping.get(intent)
-                        
-                        # Infer from other fields
-                        if data.get("reference_images"):
-                            if data.get("working_image"):
-                                return "EDIT_IMAGE_REF"
-                            else:
-                                return "NEW_IMAGE_REF"
-                        elif data.get("working_image"):
-                            return "EDIT_IMAGE"
-                        else:
-                            return "NEW_IMAGE"
+            # For the main generation endpoint, try to peek at the request body
+            if "/api/v1/generation/generate" in path:
+                try:
+                    # Get the request body
+                    body = await request.body()
+                    
+                    # Reset the request body for the actual endpoint to consume
+                    async def receive():
+                        return {"type": "http.request", "body": body}
+                    request._receive = receive
+                    
+                    if body:
+                        import json
+                        try:
+                            data = json.loads(body)
                             
-                    except (json.JSONDecodeError, KeyError):
-                        pass
+                            # Check for generation_type field
+                            if "generation_type" in data:
+                                return data["generation_type"]
+                            
+                            # Check for intent field
+                            if "intent" in data:
+                                intent = data["intent"]
+                                return self.generation_type_mapping.get(intent)
+                            
+                            # Note: The generation endpoint will correct the generation type
+                            # after the simplified flow runs, so we just need a reasonable default here
+                                
+                            # Infer from other fields in request body
+                            has_reference_images = bool(data.get("reference_images"))
+                            has_working_image = bool(data.get("working_image"))
+                            
+                            if has_reference_images:
+                                if has_working_image:
+                                    return "EDIT_IMAGE_REF"
+                                else:
+                                    return "NEW_IMAGE_REF"
+                            elif has_working_image:
+                                return "EDIT_IMAGE"
+                            else:
+                                return "NEW_IMAGE"
+                                
+                        except (json.JSONDecodeError, KeyError) as e:
+                            logger.error(f"❌ MIDDLEWARE: Error parsing request body: {e}")
+                except Exception as e:
+                    logger.error(f"❌ MIDDLEWARE: Error reading request body: {e}")
             
-            return None
+            # Default fallback
+            return "NEW_IMAGE"
             
         except Exception as e:
-            logger.error(f"Error determining generation type: {e}")
-            return None
+            logger.error(f"❌ MIDDLEWARE: Error determining generation type: {e}")
+            return "NEW_IMAGE"  # Safe default
 
 async def add_tier_permission_middleware(app):
     """Add tier permission middleware to FastAPI app"""

@@ -254,6 +254,7 @@ async def deduct_xp(
     model_used: str,
     xp_cost: int,
     actual_cost_usd: float,
+    prompt: str = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Deduct XP for a generation (called by generation service)"""
@@ -273,7 +274,8 @@ async def deduct_xp(
             model_used=model_used,
             xp_cost=xp_cost,
             actual_cost_usd=actual_cost_usd,
-            routing_decision=routing_decision.routing_logic if routing_decision else {}
+            routing_decision=routing_decision.routing_logic if routing_decision else {},
+            prompt=prompt
         )
         
         if not success:

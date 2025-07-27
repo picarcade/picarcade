@@ -29,6 +29,7 @@ class SupabaseManager:
             intent TEXT,
             model_used TEXT,
             output_url TEXT,
+            thumbnail_url TEXT,
             success TEXT NOT NULL,
             execution_time INTEGER,
             metadata JSONB,
