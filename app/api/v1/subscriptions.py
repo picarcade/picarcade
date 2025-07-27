@@ -550,4 +550,85 @@ async def check_generation_permission(
         
     except Exception as e:
         logger.error(f"Error checking permission: {e}")
-        raise HTTPException(status_code=500, detail="Failed to check permission") 
+        raise HTTPException(status_code=500, detail="Failed to check permission")
+
+@router.get("/check-xp/{generation_type}")
+async def check_xp_availability(
+    generation_type: str,
+    include_guidance: bool = True,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Check if user has enough XP for a generation type with guidance
+    
+    Returns detailed information including:
+    - XP availability status
+    - Current balance and requirements
+    - User-friendly guidance messages
+    - Subscription recommendations
+    - Direct links to subscription page
+    """
+    try:
+        user_id = current_user["id"]
+        
+        # Use the comprehensive XP checking function
+        result = await subscription_service.check_xp_availability(
+            user_id=user_id,
+            generation_type=generation_type,
+            include_guidance=include_guidance
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking XP availability: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check XP availability")
+
+@router.post("/preview-generation-cost")
+async def preview_generation_cost(
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Preview the XP cost and availability for a generation request
+    
+    Example usage:
+    POST /api/v1/subscriptions/preview-generation-cost
+    {
+        "generation_type": "NEW_IMAGE",
+        "include_guidance": true
+    }
+    
+    Returns comprehensive XP information with guidance and subscription recommendations
+    """
+    try:
+        user_id = current_user["id"]
+        generation_type = request.get("generation_type", "NEW_IMAGE")
+        include_guidance = request.get("include_guidance", True)
+        
+        # Get comprehensive XP check
+        result = await subscription_service.check_xp_availability(
+            user_id=user_id,
+            generation_type=generation_type,
+            include_guidance=include_guidance
+        )
+        
+        # Add generation type to response
+        result["generation_type"] = generation_type
+        
+        # Add user-friendly status
+        if result["has_sufficient_xp"]:
+            result["status"] = "ready"
+            result["action_required"] = None
+        elif result["xp_balance"] == 0 and result["xp_required"] == 0:
+            result["status"] = "no_subscription"
+            result["action_required"] = "subscribe"
+        else:
+            result["status"] = "insufficient_xp"
+            result["action_required"] = "upgrade_or_wait"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error previewing generation cost: {e}")
+        raise HTTPException(status_code=500, detail="Failed to preview generation cost") 

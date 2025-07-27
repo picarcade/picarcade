@@ -651,5 +651,135 @@ class SubscriptionService:
             logger.error(f"Error getting Stripe customer ID: {e}")
             return None
 
+    async def check_xp_availability(
+        self,
+        user_id: str,
+        generation_type: str,
+        include_guidance: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive XP availability check with user guidance
+        
+        Returns:
+        {
+            "has_sufficient_xp": bool,
+            "xp_balance": int,
+            "xp_required": int,
+            "xp_deficit": int,
+            "message": str,
+            "guidance": str (optional),
+            "subscription_url": str (optional),
+            "current_tier": dict (optional),
+            "recommended_tier": dict (optional)
+        }
+        """
+        try:
+            # Get user subscription
+            subscription = await self.get_user_subscription(user_id)
+            if not subscription:
+                return {
+                    "has_sufficient_xp": False,
+                    "xp_balance": 0,
+                    "xp_required": 0,
+                    "xp_deficit": 0,
+                    "message": "No subscription found. Please subscribe to use this feature.",
+                    "guidance": "Get started with any tier to begin creating amazing AI content!" if include_guidance else None,
+                    "subscription_url": "/subscriptions" if include_guidance else None
+                }
+            
+            # Get XP cost for generation type
+            current_tier = subscription.get("current_level", 0)
+            xp_cost = await self.get_xp_cost_for_generation(generation_type, current_tier)
+            xp_balance = subscription.get("xp_balance", 0)
+            xp_deficit = max(0, xp_cost - xp_balance)
+            
+            # Basic result structure
+            result = {
+                "has_sufficient_xp": xp_balance >= xp_cost,
+                "xp_balance": xp_balance,
+                "xp_required": xp_cost,
+                "xp_deficit": xp_deficit,
+                "message": "",
+                "subscription_url": "/subscriptions" if include_guidance else None
+            }
+            
+            if result["has_sufficient_xp"]:
+                result["message"] = f"Ready to generate! This will cost {xp_cost} XP."
+                return result
+            
+            # User doesn't have enough XP - provide guidance
+            if include_guidance:
+                # Get tier information for recommendations
+                try:
+                    tiers_result = self.supabase.table("subscription_tiers")\
+                        .select("*")\
+                        .order("tier_level")\
+                        .execute()
+                    
+                    current_tier_info = None
+                    recommended_tier = None
+                    
+                    if tiers_result.data:
+                        # Find current tier info
+                        for tier in tiers_result.data:
+                            if tier["tier_level"] == current_tier:
+                                current_tier_info = tier
+                                break
+                        
+                        # Find recommended tier (lowest tier that would provide enough monthly XP)
+                        for tier in tiers_result.data:
+                            monthly_allocation = tier.get("monthly_xp_allocation", 0)
+                            if monthly_allocation >= xp_deficit:
+                                recommended_tier = tier
+                                break
+                    
+                    result["current_tier"] = current_tier_info
+                    result["recommended_tier"] = recommended_tier
+                    
+                    # Generate user-friendly guidance
+                    guidance_parts = []
+                    
+                    if xp_balance == 0:
+                        guidance_parts.append("🎮 You're out of XP credits!")
+                    else:
+                        guidance_parts.append(f"⚡ You need {xp_deficit} more XP credits.")
+                    
+                    if current_tier == 0:
+                        guidance_parts.append("🚀 Choose a subscription tier to start creating amazing AI content!")
+                    else:
+                        guidance_parts.append("💎 Upgrade your tier or wait for your monthly XP refresh to continue creating.")
+                    
+                    if recommended_tier:
+                        tier_name = recommended_tier.get("tier_display_name", "higher tier")
+                        monthly_xp = recommended_tier.get("monthly_xp_allocation", 0)
+                        price_aud = recommended_tier.get("monthly_price_aud", 0)
+                        guidance_parts.append(f"🎯 Recommended: {tier_name} (A${price_aud}/month) gives you {monthly_xp} XP monthly!")
+                    
+                    result["guidance"] = " ".join(guidance_parts)
+                    
+                except Exception as e:
+                    logger.error(f"Error getting tier recommendations: {e}")
+                    result["guidance"] = "🎮 You need more XP credits. Check out our subscription tiers to keep creating!"
+            
+            # Set appropriate message
+            if current_tier == 0:
+                result["message"] = f"Insufficient credits. You need {xp_cost} XP to generate this content."
+            else:
+                result["message"] = f"Insufficient credits. Need {xp_cost} XP, have {xp_balance} XP ({xp_deficit} XP short)."
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error checking XP availability for {user_id}: {e}")
+            return {
+                "has_sufficient_xp": False,
+                "xp_balance": 0,
+                "xp_required": 0,
+                "xp_deficit": 0,
+                "message": "Unable to check XP balance. Please try again.",
+                "guidance": "Visit the subscriptions page if you continue to have issues." if include_guidance else None,
+                "subscription_url": "/subscriptions" if include_guidance else None
+            }
+
 # Global subscription service instance
 subscription_service = SubscriptionService() 

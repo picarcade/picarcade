@@ -85,40 +85,45 @@ class TierPermissionMiddleware:
                     }
                 )
             
-            # Check XP balance
-            subscription = await subscription_service.get_user_subscription(user_id)
-            if not subscription:
-                logger.warning(f"❌ MIDDLEWARE: No subscription found for user {user_id}")
-                return JSONResponse(
-                    status_code=402,
-                    content={
-                        "error": "no_subscription", 
-                        "message": "You need to subscribe to use this feature",
-                        "redirect_to_subscriptions": True
-                    }
-                )
-            
-            current_tier = subscription.get("current_level", 0)
-            xp_cost = await subscription_service.get_xp_cost_for_generation(
-                generation_type, current_tier
+            # Check XP balance using comprehensive function
+            xp_check = await subscription_service.check_xp_availability(
+                user_id=user_id,
+                generation_type=generation_type,
+                include_guidance=True
             )
             
-            xp_balance = subscription.get("xp_balance", 0)
-            if xp_balance < xp_cost:
-                logger.warning(f"❌ MIDDLEWARE: Insufficient XP for user {user_id} - Need {xp_cost}, have {xp_balance}")
+            if not xp_check["has_sufficient_xp"]:
+                # Determine error type and status code
+                if xp_check["xp_balance"] == 0 and xp_check["xp_required"] == 0:
+                    # No subscription
+                    error_type = "no_subscription"
+                    logger.warning(f"❌ MIDDLEWARE: No subscription found for user {user_id}")
+                else:
+                    # Insufficient XP
+                    error_type = "insufficient_xp"
+                    logger.warning(f"❌ MIDDLEWARE: Insufficient XP for user {user_id} - Need {xp_check['xp_required']}, have {xp_check['xp_balance']}")
+                
                 return JSONResponse(
                     status_code=402,
                     content={
-                        "error": "insufficient_xp",
-                        "message": f"Insufficient credits. Need {xp_cost} credits, have {xp_balance} credits",
-                        "xp_required": xp_cost,
-                        "xp_balance": xp_balance,
-                        "xp_deficit": xp_cost - xp_balance,
-                        "redirect_to_subscriptions": True
+                        "error": error_type,
+                        "message": xp_check["message"],
+                        "guidance": xp_check.get("guidance"),
+                        "xp_required": xp_check["xp_required"],
+                        "xp_balance": xp_check["xp_balance"],
+                        "xp_deficit": xp_check["xp_deficit"],
+                        "redirect_to_subscriptions": True,
+                        "subscription_url": xp_check.get("subscription_url"),
+                        "current_tier": xp_check.get("current_tier"),
+                        "recommended_tier": xp_check.get("recommended_tier")
                     }
                 )
             
             # Add tier and XP info to request state for use by generation endpoints
+            current_tier_info = xp_check.get("current_tier", {})
+            current_tier = current_tier_info.get("tier_level", 0) if current_tier_info else 0
+            xp_cost = xp_check["xp_required"]
+            
             request.state.user_tier = current_tier
             request.state.xp_cost = xp_cost
             request.state.generation_type = generation_type
