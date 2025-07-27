@@ -189,8 +189,10 @@ const checkXP = async (generationType) => {
 | EDIT_IMAGE_REF | 18 XP | Runway Gen4 Image |
 | EDIT_IMAGE_ADD_NEW | 18 XP | Runway Gen4 Image |
 | NEW_VIDEO | 15 XP | Minimax Hailuo-02 |
-| IMAGE_TO_VIDEO | 150 XP | Runway Gen4 Turbo |
 | NEW_VIDEO_WITH_AUDIO | 720 XP | Google VEO-3 Fast |
+| IMAGE_TO_VIDEO | 150 XP | Runway Gen4 Turbo |
+| IMAGE_TO_VIDEO_WITH_AUDIO | 720 XP | Google VEO-3 Fast |
+| EDIT_IMAGE_REF_TO_VIDEO | 150 XP | Runway Gen4 Turbo |
 
 ## Subscription Tiers
 
