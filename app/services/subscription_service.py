@@ -269,6 +269,7 @@ class SubscriptionService:
                 return None
             
             # Create subscription
+            logger.info(f"Creating subscription for customer {customer_id} with payment method {payment_method_id} and price {price_id}")
             subscription = stripe.Subscription.create(
                 customer=customer_id,
                 items=[{"price": price_id}],
@@ -280,11 +281,13 @@ class SubscriptionService:
                 }
             )
             
+            logger.info(f"Subscription created successfully: {subscription.id}, status: {subscription.status}")
+            
             return {
                 "subscription_id": subscription.id,
                 "status": subscription.status,
-                "current_period_start": subscription.current_period_start,
-                "current_period_end": subscription.current_period_end,
+                "current_period_start": datetime.fromtimestamp(subscription.current_period_start) if hasattr(subscription, 'current_period_start') and subscription.current_period_start else None,
+                "current_period_end": datetime.fromtimestamp(subscription.current_period_end) if hasattr(subscription, 'current_period_end') and subscription.current_period_end else None,
 
             }
             
@@ -318,25 +321,52 @@ class SubscriptionService:
             
             tier = tier_result.data
             
+            # Handle current_period_start and current_period_end (could be timestamp or datetime)
+            def convert_to_datetime(value):
+                if isinstance(value, datetime):
+                    return value
+                elif isinstance(value, (int, float)):
+                    return datetime.fromtimestamp(value)
+                else:
+                    return datetime.now()
+            
             # Update user subscription
             update_data = {
                 "tier_id": tier["id"],
                 "stripe_subscription_id": subscription_data["id"],
                 "status": "active" if subscription_data["status"] == "active" else subscription_data["status"],
-                "current_period_start": datetime.fromtimestamp(subscription_data["current_period_start"]),
-                "current_period_end": datetime.fromtimestamp(subscription_data["current_period_end"]),
+                "current_period_start": convert_to_datetime(subscription_data["current_period_start"]).isoformat(),
+                "current_period_end": convert_to_datetime(subscription_data["current_period_end"]).isoformat(),
                 "current_level": tier["tier_level"],
                 "xp_balance": tier["monthly_xp_allocation"],
                 "xp_allocated_this_period": tier["monthly_xp_allocation"],
                 "xp_used_this_period": 0,
-                "last_xp_reset": datetime.now()
+                "last_xp_reset": datetime.now().isoformat()
             }
             
 
             
-            result = self.supabase.table("user_subscriptions")\
-                .upsert({"user_id": user_id, **update_data})\
-                .execute()
+            logger.info(f"Updating user subscription for user {user_id} with tier {tier_name} (level {tier['tier_level']})")
+            logger.info(f"Update data: {update_data}")
+            
+            # Check if user already has a subscription record
+            existing_subscription = await self.get_user_subscription(user_id)
+            
+            if existing_subscription:
+                # Update existing record
+                logger.info(f"Updating existing subscription for user {user_id}")
+                result = self.supabase.table("user_subscriptions")\
+                    .update(update_data)\
+                    .eq("user_id", user_id)\
+                    .execute()
+            else:
+                # Insert new record
+                logger.info(f"Creating new subscription for user {user_id}")
+                result = self.supabase.table("user_subscriptions")\
+                    .insert({"user_id": user_id, **update_data})\
+                    .execute()
+            
+            logger.info(f"Database update result: {result.data if result.data else 'No data returned'}")
             
             # Create XP allocation transaction
             await self._create_xp_allocation_transaction(

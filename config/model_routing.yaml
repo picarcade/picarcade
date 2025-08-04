@@ -44,6 +44,14 @@ model_routing:
         model: "gen4_turbo"
         generator: "runway"
         # No fallback - Runway is primary for image-to-video
+      VIDEO_EDIT:
+        model: "gen4_aleph"
+        generator: "runway"
+        # No fallback - gen4_aleph is only model for video editing
+      VIDEO_EDIT_REF:
+        model: "gen4_aleph"
+        generator: "runway"
+        # No fallback - gen4_aleph is only model for video editing with references
   
 
 

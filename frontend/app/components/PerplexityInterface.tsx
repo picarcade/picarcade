@@ -25,6 +25,7 @@ const PerplexityInterface = () => {
   const [uploadedImages, setUploadedImages] = useState<UploadResponse[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null); // Track session for conversational editing
+  const [currentWorkingVideo, setCurrentWorkingVideo] = useState<string | null>(null); // Track current working video for editing
   // Use authenticated Supabase user ID when available, fallback to localStorage for unauthenticated users
   const [userId] = useState(() => {
     if (user?.id) {
@@ -46,6 +47,18 @@ const PerplexityInterface = () => {
   const [taggedImages, setTaggedImages] = useState<Set<string>>(new Set());
   const [imageTagMap, setImageTagMap] = useState<Map<string, string>>(new Map());
   const [currentXP, setCurrentXP] = useState<number>(0);
+  const [currentWittyMessageIndex, setCurrentWittyMessageIndex] = useState<number>(0);
+  const [currentWittyMessages, setCurrentWittyMessages] = useState<string[]>([]);
+
+  // Helper function to check if URL is an image
+  const isImageUrl = (url: string) => {
+    return /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(url);
+  };
+
+  // Helper function to check if URL is a video
+  const isVideoUrl = (url: string) => {
+    return /\.(mp4|mov|avi|mkv|webm|m4v)(\?|$)/i.test(url);
+  };
 
 
   const [xpNotification, setXpNotification] = useState<{
@@ -85,6 +98,24 @@ const PerplexityInterface = () => {
   useEffect(() => {
     loadXPData();
   }, []);
+
+  // Cycle through witty messages during generation
+  useEffect(() => {
+    if (isGenerating) {
+      // Use current witty messages for the current request
+      const messages = currentWittyMessages;
+      
+      if (messages && messages.length > 0) {
+        const interval = setInterval(() => {
+          setCurrentWittyMessageIndex(prev => (prev + 1) % messages.length);
+        }, 10000); // Change message every 10 seconds
+
+        return () => clearInterval(interval);
+      }
+    } else {
+      setCurrentWittyMessageIndex(0);
+    }
+  }, [isGenerating, currentWittyMessages]);
 
   const loadXPData = async () => {
     try {
@@ -196,6 +227,13 @@ const PerplexityInterface = () => {
     if (result) {
       setPreviousResult(result);
     }
+    
+    // Reset witty message index when starting new generation
+    setCurrentWittyMessageIndex(0);
+    
+    // Generate witty messages for the current request immediately
+    const wittyMessages = await generateWittyMessages(inputValue.trim());
+    setCurrentWittyMessages(wittyMessages);
 
     try {
       console.log(`[DEBUG Frontend] About to generate with session_id: ${sessionId}`);
@@ -210,15 +248,24 @@ const PerplexityInterface = () => {
         session_id: sessionId || undefined, // Send session ID for conversational continuity
         quality_priority: 'balanced',
         uploaded_images: uploadedImages.map(img => img.public_url),
-        reference_images: referenceImages
+        reference_images: referenceImages,
+        current_working_video: currentWorkingVideo || undefined // Send working video for video editing
       });
 
       setResult(response);
+      
+
       
       // Extract session ID from response metadata for future requests
       if (response.metadata?.session_id) {
         setSessionId(response.metadata.session_id);
         console.log('[Frontend] Session ID obtained:', response.metadata.session_id);
+      }
+      
+      // Set working video if this was a video generation/edit
+      if (response.success && response.output_url && isVideoUrl(response.output_url)) {
+        setCurrentWorkingVideo(response.output_url);
+        console.log('[Frontend] Working video set:', response.output_url);
       }
       
       // Clear uploaded images after successful generation (they're now part of the session)
@@ -251,7 +298,62 @@ const PerplexityInterface = () => {
       }
     } finally {
       setIsGenerating(false);
+      setCurrentWittyMessages([]); // Clear witty messages when generation completes
     }
+  };
+
+  const generateWittyMessages = async (prompt: string, promptType: string = "NEW_IMAGE") => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('access_token');
+      
+      console.log('[DEBUG] Generating witty messages for:', prompt);
+      
+      const response = await fetch(`${baseUrl}/api/v1/generation/generate-witty-messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_prompt: prompt,
+          prompt_type: promptType,
+          context: {
+            user_id: userId,
+            session_id: sessionId,
+            working_image: result?.output_url,
+            working_video: currentWorkingVideo,
+            uploaded_images: uploadedImages.map(img => img.public_url),
+          }
+        })
+      });
+      
+      console.log('[DEBUG] Witty messages response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] Witty messages received:', data.witty_messages);
+        return data.witty_messages || [];
+      } else {
+        console.error('[DEBUG] Witty messages API error:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Error generating witty messages:', error);
+    }
+    
+    // Fallback messages
+    return [
+      "Creating something amazing for you",
+      "This might take around 30 seconds, but it'll be worth the wait",
+      "Your creative vision is coming to life",
+      "Working some AI magic here",
+      "Almost there! Your masterpiece is being crafted",
+      "Just 30 seconds until your creation is ready",
+      "The AI is putting the finishing touches on your request",
+      "Something special is being generated just for you",
+      "Your imagination is becoming reality",
+      "The wait will be worth it - this is going to look incredible!"
+    ];
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -466,19 +568,27 @@ const PerplexityInterface = () => {
       console.log(`[DEBUG Frontend] Setting session ID to: ${item.generation_id}`);
       setSessionId(item.generation_id);
       
-      // **CRITICAL FIX**: Set this image as the working image in the session
+      // **CRITICAL FIX**: Set this item as the working image/video in the session
       try {
         const sessionId = item.generation_id; // Use generation_id as session_id
-        console.log(`[DEBUG Frontend] About to set working image for session ${sessionId}: ${item.output_url}`);
         
-        // Import the API function we'll need
-        const { setWorkingImage } = await import('../lib/api');
-        
-        const result = await setWorkingImage(sessionId, item.output_url, userId);
-        console.log(`[DEBUG Frontend] Successfully set working image:`, result);
+        if (isVideoUrl(item.output_url)) {
+          // Handle video selection
+          console.log(`[DEBUG Frontend] Setting working video for session ${sessionId}: ${item.output_url}`);
+          setCurrentWorkingVideo(item.output_url);
+        } else {
+          // Handle image selection
+          console.log(`[DEBUG Frontend] About to set working image for session ${sessionId}: ${item.output_url}`);
+          
+          // Import the API function we'll need
+          const { setWorkingImage } = await import('../lib/api');
+          
+          const result = await setWorkingImage(sessionId, item.output_url, userId);
+          console.log(`[DEBUG Frontend] Successfully set working image:`, result);
+        }
       } catch (error) {
-        console.error('[DEBUG Frontend] Failed to set working image in session:', error);
-        // Don't throw - continue with the selection even if working image setting fails
+        console.error('[DEBUG Frontend] Failed to set working image/video in session:', error);
+        // Don't throw - continue with the selection even if working item setting fails
       }
       
       setShowHistory(false);
@@ -513,6 +623,7 @@ const PerplexityInterface = () => {
     setPreviousResult(null);
     setError(null);
     setSessionId(null);
+    setCurrentWorkingVideo(null); // Clear working video
     
     // Clear any active working images by clearing the session
     try {
@@ -536,7 +647,7 @@ const PerplexityInterface = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
         {/* Header with Logo and User Menu */}
-        <div className="flex items-center justify-between mb-12">
+        <div className="flex items-center justify-between mb-8">
           <div className="flex-1"></div>
           
           {/* Logo */}
@@ -550,14 +661,6 @@ const PerplexityInterface = () => {
           
           {/* User Menu */}
           <div className="flex-1 flex justify-end items-center space-x-4">
-            {/* XP Indicator */}
-            {user && (
-              <XPIndicator
-                currentXP={currentXP}
-                isGenerating={isGenerating}
-              />
-            )}
-
             {loading ? (
               <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse"></div>
             ) : user ? (
@@ -612,6 +715,16 @@ const PerplexityInterface = () => {
             )}
           </div>
         </div>
+
+        {/* XP Progress Bar - Under logo, above prompt */}
+        {user && (
+          <div className="flex justify-center mb-6">
+            <XPIndicator
+              currentXP={currentXP}
+              isGenerating={isGenerating}
+            />
+          </div>
+        )}
 
         {/* Hidden File Input */}
         <input
@@ -773,7 +886,12 @@ const PerplexityInterface = () => {
         {/* Status Messages */}
         {isGenerating && (
           <div className="text-center mb-8">
-            <p className="text-gray-400 text-lg">Creating something amazing...</p>
+            <p className="text-gray-400 text-lg">
+              {currentWittyMessages.length > 0 
+                ? currentWittyMessages[currentWittyMessageIndex] 
+                : "Creating something amazing..."}
+            </p>
+
           </div>
         )}
 
@@ -803,7 +921,11 @@ const PerplexityInterface = () => {
                 <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-sm rounded-2xl flex items-center justify-center z-10">
                   <div className="text-center">
                     <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mx-auto mb-3" />
-                    <p className="text-white text-lg">Generating new version...</p>
+                    <p className="text-white text-lg">
+                      {currentWittyMessages.length > 0 
+                        ? currentWittyMessages[currentWittyMessageIndex] 
+                        : "Generating new version..."}
+                    </p>
                     <p className="text-gray-400 text-sm">Your current image will be replaced</p>
                   </div>
                 </div>
@@ -815,16 +937,21 @@ const PerplexityInterface = () => {
                 </h3>
                 
                 {/* Show session info */}
-                {sessionId && result?.image_source_type && (
+                {sessionId && (result?.image_source_type || currentWorkingVideo) && (
                   <div className="text-xs text-gray-400 flex items-center gap-2">
-                    {result.image_source_type === 'working_image' && (
+                    {result?.image_source_type === 'working_image' && (
                       <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded">
                         Editing Previous Result
                       </span>
                     )}
-                    {result.image_source_type === 'uploaded' && (
+                    {result?.image_source_type === 'uploaded' && (
                       <span className="bg-green-500/20 text-green-300 px-2 py-1 rounded">
                         Editing Uploaded Image
+                      </span>
+                    )}
+                    {currentWorkingVideo && (
+                      <span className="bg-purple-500/20 text-purple-300 px-2 py-1 rounded">
+                        Video Editing Enabled
                       </span>
                     )}
                   </div>

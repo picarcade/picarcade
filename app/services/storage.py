@@ -7,6 +7,10 @@ from app.core.config import settings
 from PIL import Image
 import time
 import aiohttp
+import os
+import cv2
+import numpy as np
+import tempfile
 
 class SupabaseStorageService:
     """Service for handling file uploads to Supabase Storage"""
@@ -20,22 +24,57 @@ class SupabaseStorageService:
         self._ensure_bucket_exists()
     
     def _ensure_bucket_exists(self):
-        """Ensure the storage bucket exists"""
+        """Ensure the storage bucket exists with proper configuration"""
         try:
             # Try to get bucket info - if it fails, the bucket doesn't exist
-            self.supabase.storage.get_bucket(self.bucket_name)
+            bucket_info = self.supabase.storage.get_bucket(self.bucket_name)
+            print(f"Bucket {self.bucket_name} already exists")
+            
+            # Check if the bucket has the correct MIME type configuration
+            # Note: We can't easily check the current configuration, so we'll handle upload errors gracefully
+            return
+            
         except Exception:
             # Create bucket if it doesn't exist
             try:
                 self.supabase.storage.create_bucket(self.bucket_name, options={
                     "public": True,  # Make bucket public for easy access
                     "file_size_limit": 50 * 1024 * 1024,  # 50MB limit
-                    "allowed_mime_types": ["image/jpeg", "image/png", "image/webp", "image/gif"]
+                    "allowed_mime_types": [
+                        "image/jpeg", "image/png", "image/webp", "image/gif",
+                        "video/mp4", "video/webm", "video/mov", "video/quicktime", "video/avi"
+                    ]
                 })
-                print(f"Created storage bucket: {self.bucket_name}")
+                print(f"Created storage bucket: {self.bucket_name} with video support")
             except Exception as e:
                 print(f"Error creating bucket: {e}")
+                # If bucket creation fails, we'll handle upload errors gracefully
     
+    def _recreate_bucket_with_video_support(self):
+        """Recreate the bucket with video MIME type support"""
+        try:
+            # Delete existing bucket if it exists
+            try:
+                self.supabase.storage.delete_bucket(self.bucket_name)
+                print(f"Deleted existing bucket: {self.bucket_name}")
+            except Exception:
+                pass  # Bucket might not exist
+            
+            # Create new bucket with video support
+            self.supabase.storage.create_bucket(self.bucket_name, options={
+                "public": True,
+                "file_size_limit": 50 * 1024 * 1024,  # 50MB limit
+                "allowed_mime_types": [
+                    "image/jpeg", "image/png", "image/webp", "image/gif",
+                    "video/mp4", "video/webm", "video/mov", "video/quicktime", "video/avi"
+                ]
+            })
+            print(f"Successfully recreated bucket {self.bucket_name} with video support")
+            return True
+        except Exception as e:
+            print(f"Error recreating bucket: {e}")
+            return False
+
     async def upload_image(self, 
                           file: UploadFile, 
                           user_id: str = None,
@@ -190,7 +229,7 @@ class SupabaseStorageService:
             image_url: External image/video URL to download
             user_id: Optional user ID for organizing files
             resize_max: Maximum dimension for main image resizing (videos are stored as-is)
-            thumbnail_size: Maximum dimension for thumbnail (videos get a placeholder)
+            thumbnail_size: Maximum dimension for thumbnail (videos get frame extraction)
             
         Returns:
             Tuple of (success, file_path, public_url, thumbnail_url)
@@ -245,8 +284,8 @@ class SupabaseStorageService:
             
             # Process content based on type
             if is_video:
-                # Store video as-is, create a placeholder thumbnail
-                thumbnail_content = self._create_video_placeholder_thumbnail(thumbnail_size)
+                # Store video as-is, extract frame for thumbnail
+                thumbnail_content = await self._extract_video_thumbnail(content, thumbnail_size)
             else:
                 # Resize main image if needed
                 if resize_max:
@@ -255,26 +294,50 @@ class SupabaseStorageService:
                 thumbnail_content = self._generate_thumbnail(content, thumbnail_size)
             
             # Upload main file
-            main_result = self.supabase.storage.from_(self.bucket_name).upload(
-                path=file_path,
-                file=content,
-                file_options={
-                    "content-type": content_type,
-                    "cache-control": "3600",
-                    "upsert": "true"
-                }
-            )
+            try:
+                main_result = self.supabase.storage.from_(self.bucket_name).upload(
+                    path=file_path,
+                    file=content,
+                    file_options={
+                        "content-type": content_type,
+                        "cache-control": "3600",
+                        "upsert": "true"
+                    }
+                )
+            except Exception as upload_error:
+                print(f"Error uploading {'video' if is_video else 'image'} file: {upload_error}")
+                # For videos, if upload fails, we'll keep the original URL
+                if is_video:
+                    error_msg = str(upload_error).lower()
+                    if "mime type" in error_msg and "not supported" in error_msg:
+                        print(f"Video MIME type not supported by bucket. Consider recreating bucket with video support.")
+                        print(f"Failed to store video file, keeping original URL: {image_url}")
+                    else:
+                        print(f"Failed to store video file, keeping original URL: {image_url}")
+                    return False, None, image_url, None
+                else:
+                    return False, None, None, None
             
             # Upload thumbnail
-            thumb_result = self.supabase.storage.from_(self.bucket_name).upload(
-                path=thumbnail_path,
-                file=thumbnail_content,
-                file_options={
-                    "content-type": "image/jpeg",
-                    "cache-control": "3600",
-                    "upsert": "true"
-                }
-            )
+            try:
+                thumb_result = self.supabase.storage.from_(self.bucket_name).upload(
+                    path=thumbnail_path,
+                    file=thumbnail_content,
+                    file_options={
+                        "content-type": "image/jpeg",
+                        "cache-control": "3600",
+                        "upsert": "true"
+                    }
+                )
+            except Exception as thumb_error:
+                print(f"Error uploading thumbnail: {thumb_error}")
+                # If thumbnail upload fails, we'll still return the main file if it was successful
+                if main_result:
+                    public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                    print(f"Successfully stored {'video' if is_video else 'image'} but thumbnail failed: {public_url}")
+                    return True, file_path, public_url, None
+                else:
+                    return False, None, None, None
             
             if main_result and thumb_result:
                 # Get public URLs
@@ -283,8 +346,13 @@ class SupabaseStorageService:
                 print(f"Successfully stored {'video' if is_video else 'image'}: {public_url}")
                 print(f"Generated thumbnail: {thumbnail_url}")
                 return True, file_path, public_url, thumbnail_url
+            elif main_result:
+                # Main file uploaded successfully but thumbnail failed
+                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                print(f"Successfully stored {'video' if is_video else 'image'} but thumbnail failed: {public_url}")
+                return True, file_path, public_url, None
             else:
-                print("Failed to upload file or thumbnail")
+                print("Failed to upload file")
                 return False, None, None, None
                 
         except Exception as e:
@@ -390,8 +458,118 @@ class SupabaseStorageService:
         """Get public URL for a stored image"""
         return self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
 
+    async def _extract_video_thumbnail(self, video_content: bytes, max_dimension: int) -> bytes:
+        """
+        Extract a thumbnail frame from video content using OpenCV
+        
+        This method attempts to extract a real frame from the video (around 1 second in or middle frame)
+        and generates a proper thumbnail from it, similar to how image thumbnails are created.
+        Falls back to placeholder thumbnail if frame extraction fails.
+        """
+        try:
+            # Create a temporary file to store the video
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+                temp_video.write(video_content)
+                temp_video_path = temp_video.name
+            
+            try:
+                # Open video with OpenCV
+                cap = cv2.VideoCapture(temp_video_path)
+                
+                if not cap.isOpened():
+                    print("Failed to open video with OpenCV, falling back to placeholder")
+                    return self._create_video_placeholder_thumbnail(max_dimension)
+                
+                # Get video properties
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                
+                # Try to get a frame from around 1 second into the video, or middle frame
+                target_frame = min(int(fps) if fps > 0 else 30, total_frames // 2) if total_frames > 0 else 0
+                
+                # Set frame position
+                cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+                
+                # Read the frame
+                ret, frame = cap.read()
+                cap.release()
+                
+                if not ret or frame is None:
+                    print("Failed to extract frame from video, using placeholder")
+                    return self._create_video_placeholder_thumbnail(max_dimension)
+                
+                # Convert BGR to RGB (OpenCV uses BGR by default)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Convert to PIL Image
+                pil_image = Image.fromarray(frame_rgb)
+                
+                # Generate thumbnail from the extracted frame
+                thumbnail_content = self._generate_thumbnail_from_pil(pil_image, max_dimension)
+                
+                print(f"Successfully extracted video thumbnail from frame {target_frame}")
+                return thumbnail_content
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_video_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            print(f"Error extracting video thumbnail: {e}")
+            # Fallback to placeholder
+            return self._create_video_placeholder_thumbnail(max_dimension)
+
+    def _generate_thumbnail_from_pil(self, pil_image: Image.Image, max_dimension: int) -> bytes:
+        """Generate thumbnail from a PIL Image object"""
+        try:
+            # Convert to RGB if necessary (for JPEG)
+            if pil_image.mode in ('RGBA', 'P'):
+                # Create white background for transparent images
+                background = Image.new('RGB', pil_image.size, (255, 255, 255))
+                if pil_image.mode == 'RGBA':
+                    background.paste(pil_image, mask=pil_image.split()[-1])
+                else:
+                    background.paste(pil_image)
+                pil_image = background
+            elif pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+            
+            # Calculate thumbnail dimensions maintaining aspect ratio
+            width, height = pil_image.size
+            if width <= max_dimension and height <= max_dimension:
+                # Image is already small enough
+                output = io.BytesIO()
+                pil_image.save(output, format='JPEG', quality=85, optimize=True)
+                return output.getvalue()
+            
+            # Resize maintaining aspect ratio
+            if width > height:
+                new_width = max_dimension
+                new_height = int(height * max_dimension / width)
+            else:
+                new_height = max_dimension
+                new_width = int(width * max_dimension / height)
+            
+            thumbnail = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Save as JPEG with high quality for thumbnails
+            output = io.BytesIO()
+            thumbnail.save(output, format='JPEG', quality=85, optimize=True)
+            return output.getvalue()
+            
+        except Exception as e:
+            print(f"Error generating thumbnail from PIL image: {e}")
+            # Return a fallback thumbnail
+            fallback = Image.new('RGB', (max_dimension, max_dimension), (128, 128, 128))
+            output = io.BytesIO()
+            fallback.save(output, format='JPEG', quality=85)
+            return output.getvalue()
+
     def _create_video_placeholder_thumbnail(self, max_dimension: int) -> bytes:
-        """Create a placeholder thumbnail for video files"""
+        """Create a placeholder thumbnail for video files (fallback)"""
         try:
             # Create a simple placeholder image with a play icon
             placeholder = Image.new('RGB', (max_dimension, max_dimension), (64, 64, 64))

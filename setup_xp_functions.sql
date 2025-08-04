@@ -23,6 +23,8 @@ BEGIN
         WHEN 'IMAGE_TO_VIDEO' THEN RETURN 150;
         WHEN 'IMAGE_TO_VIDEO_WITH_AUDIO' THEN RETURN 720;
         WHEN 'EDIT_IMAGE_REF_TO_VIDEO' THEN RETURN 150;
+        WHEN 'VIDEO_EDIT' THEN RETURN 300; -- gen4_aleph video editing (50c per 10s)
+        WHEN 'VIDEO_EDIT_REF' THEN RETURN 300; -- gen4_aleph video editing with references
         ELSE RETURN 10; -- Default cost
     END CASE;
 END;

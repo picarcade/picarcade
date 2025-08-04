@@ -16,7 +16,7 @@ This guide explains how to set up Supabase Storage for handling image uploads in
    - Name: `images`
    - Make it public: **Yes** (checked)
    - File size limit: `50 MB`
-   - Allowed MIME types: `image/jpeg, image/png, image/webp, image/gif`
+   - Allowed MIME types: `image/jpeg, image/png, image/webp, image/gif, video/mp4, video/webm, video/mov, video/quicktime`
 
 3. **Set Storage Policies**
    - Click on the `images` bucket
@@ -48,7 +48,7 @@ Run this SQL in your Supabase SQL Editor:
 ```sql
 -- Create storage bucket
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('images', 'images', true, 52428800, '{"image/jpeg","image/png","image/webp","image/gif"}');
+VALUES ('images', 'images', true, 52428800, '{"image/jpeg","image/png","image/webp","image/gif","video/mp4","video/webm","video/mov","video/quicktime"}');
 
 -- Create policies
 CREATE POLICY "Public read access" ON storage.objects

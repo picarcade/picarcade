@@ -63,6 +63,34 @@ vertex_ai_generator = get_vertex_ai_generator()  # This can be None if not confi
 # Initialize virtual try-on service
 virtual_tryon_service = VirtualTryOnService()
 
+def _determine_reference_type(uri: str) -> str:
+    """
+    Determine if a reference is an image or video based on its URI.
+    
+    Args:
+        uri: The URI of the reference
+        
+    Returns:
+        "image" or "video" based on the file extension or URL pattern
+    """
+    # Video file extensions
+    video_extensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv']
+    
+    # Check for video file extensions in the URI
+    uri_lower = uri.lower()
+    for ext in video_extensions:
+        if ext in uri_lower:
+            return "video"
+    
+    # Check for video-related keywords in the URL
+    video_keywords = ['video', 'mp4', 'webm', 'mov']
+    for keyword in video_keywords:
+        if keyword in uri_lower:
+            return "video"
+    
+    # Default to image if no video indicators found
+    return "image"
+
 @router.post("/generate", response_model=GenerationResponse)
 async def generate_content(
     request: GenerationRequest,
@@ -113,6 +141,19 @@ async def generate_content(
             })
             current_working_image = None
         
+        # Get current working video for video editing (if method exists)
+        current_working_video = request.current_working_video
+        try:
+            if hasattr(session_manager, 'get_current_working_video'):
+                current_working_video = current_working_video or await session_manager.get_current_working_video(effective_session_id)
+                api_logger.debug("Retrieved working video", extra={"working_video": current_working_video})
+        except Exception as session_error:
+            api_logger.warning("Session manager error retrieving working video", extra={
+                "session_id": effective_session_id,
+                "error": str(session_error)
+            })
+            current_working_video = None
+        
         # Validate working image
         if current_working_image:
             if not current_working_image.startswith(('http://', 'https://')):
@@ -126,11 +167,13 @@ async def generate_content(
         
         # SIMPLIFIED FLOW: Determine boolean flags for CSV decision matrix
         active_image = bool(current_working_image)
+        active_video = bool(current_working_video)
         uploaded_image = bool(request.uploaded_images and len(request.uploaded_images) > 0)
         referenced_image = bool(ReferenceService.has_references(request.prompt))
         
         api_logger.debug("Simplified flow flags", extra={
-            "active_image": active_image, 
+            "active_image": active_image,
+            "active_video": active_video, 
             "uploaded_image": uploaded_image, 
             "referenced_image": referenced_image
         })
@@ -139,12 +182,14 @@ async def generate_content(
         flow_result = await simplified_flow.process_user_request(
             user_prompt=request.prompt,
             active_image=active_image,
+            active_video=active_video,
             uploaded_image=uploaded_image,
             referenced_image=referenced_image,
             context={
                 "user_id": request.user_id,
                 "session_id": effective_session_id,
                 "working_image": current_working_image,
+                "working_video": current_working_video,
                 "uploaded_images": request.uploaded_images or []
             },
             user_id=request.user_id  # Pass user_id for Sprint 3 infrastructure
@@ -218,6 +263,13 @@ async def generate_content(
                 if missing_tags:
                     api_logger.debug("Missing references", extra={"missing_tags": missing_tags})
             
+            # Add working video to reference images if doing video editing
+            if current_working_video and flow_result.prompt_type.value in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                from app.models.generation import ReferenceImage
+                working_video_ref = ReferenceImage(uri=current_working_video, tag="working_video")
+                reference_images.append(working_video_ref)
+                api_logger.debug("Added working video reference for VIDEO_EDIT")
+            
             api_logger.debug("Found reference images", extra={"count": len(reference_images)})
         
         # Convert simplified flow result to legacy format for compatibility
@@ -229,7 +281,9 @@ async def generate_content(
             "NEW_IMAGE_REF": "edit_image",  # NEW_IMAGE_REF uses Kontext like editing
             "EDIT_IMAGE": "edit_image", 
             "EDIT_IMAGE_REF": "virtual_tryon" if uploaded_image else "edit_image",
-            "EDIT_IMAGE_ADD_NEW": "edit_image"  # New: Adding elements to scenes
+            "EDIT_IMAGE_ADD_NEW": "edit_image",  # New: Adding elements to scenes
+            "VIDEO_EDIT": "video_edit",  # New: Video editing with gen4_aleph
+            "VIDEO_EDIT_REF": "video_edit"  # New: Video editing with references
         }
         
         basic_intent_value = intent_mapping.get(flow_result.prompt_type.value, "generate_image")
@@ -511,9 +565,10 @@ async def generate_content(
             "has_references": bool(request.reference_images)
         })
         
-        # NEW: Apply updated video routing logic based on input image presence and audio requirements
-        is_video_generation = flow_result.prompt_type.value in ["NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]
+        # NEW: Apply updated video routing logic based on input image/video presence and audio requirements
+        is_video_generation = flow_result.prompt_type.value in ["NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO", "VIDEO_EDIT", "VIDEO_EDIT_REF"]
         has_input_image = bool(current_working_image or (request.uploaded_images and len(request.uploaded_images) > 0))
+        has_input_video = bool(current_working_video)
         
         # Audio detection - check for audio keywords in prompt or explicit audio request
         audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", "lyrics", "melody", "vocal", "narration", "dialogue", "conversation"]
@@ -521,7 +576,17 @@ async def generate_content(
                          any(keyword in request.prompt.lower() for keyword in audio_keywords)) if is_video_generation else False
         
         if is_video_generation:
-            if requires_audio:
+            # Video editing requests: Always use gen4_aleph via Runway
+            if flow_result.prompt_type.value in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                api_logger.debug("Video editing detected: routing to gen4_aleph via Runway", extra={
+                    "prompt_type": flow_result.prompt_type.value,
+                    "has_working_video": has_input_video
+                })
+                selected_model = "gen4_aleph"
+                configured_generator = "runway"
+                generator = get_runway_generator()
+                
+            elif requires_audio:
                 # Audio requests: Use VEO-3-Fast (only model that supports audio)
                 api_logger.debug("Audio video detected: routing to VEO-3-Fast", extra={
                     "prompt_type": flow_result.prompt_type.value,
@@ -566,8 +631,39 @@ async def generate_content(
             api_logger.debug("Using FRESH RunwayGenerator", extra={"model": selected_model, "configured_generator": configured_generator})
             generator = get_runway_generator()  # Create fresh instance!
             
+            # Configure for video editing generation (gen4_aleph)
+            if selected_model == "gen4_aleph" and flow_result.prompt_type.value in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                api_logger.debug("Configuring Runway for video editing", extra={
+                    "model": selected_model,
+                    "working_video": current_working_video,
+                    "references": len(reference_images) if reference_images else 0
+                })
+                parameters["model"] = selected_model
+                parameters["type"] = "video_edit"  # Set the correct type
+                parameters["promptText"] = flow_result.enhanced_prompt
+                parameters["videoUri"] = current_working_video
+                parameters["current_working_video"] = current_working_video
+                if reference_images:
+                    # For video editing, only include image references (Runway gen4_aleph doesn't support video references)
+                    image_references = []
+                    for ref in reference_images:
+                        ref_type = _determine_reference_type(ref.uri)
+                        if ref_type == "image":
+                            image_references.append({"type": "image", "uri": ref.uri})
+                        else:
+                            # Log that video references are being filtered out
+                            api_logger.warning(f"🎬 VIDEO_EDIT: Filtering out video reference {ref.uri} - gen4_aleph only supports image references")
+                    
+                    if image_references:
+                        parameters["references"] = image_references
+                        api_logger.info(f"🎬 VIDEO_EDIT with {len(image_references)} image reference(s)")
+                    else:
+                        api_logger.info("🎬 VIDEO_EDIT: No valid image references found")
+                
+                api_logger.info(f"🎬 VIDEO_EDIT configured: {parameters}")
+            
             # Configure for image-to-video generation
-            if selected_model in ["gen3a_turbo", "gen4_turbo"] and has_input_image:
+            elif selected_model in ["gen3a_turbo", "gen4_turbo"] and has_input_image:
                 api_logger.debug("Configuring Runway for image-to-video", extra={
                     "model": selected_model,
                     "working_image": current_working_image,
@@ -773,14 +869,26 @@ async def generate_content(
             else:
                 result.image_source_type = "none"
         
-        # Update session with newly generated image for future edits
+        # Update session with newly generated content for future edits
         if result.success and result.output_url:
-            api_logger.debug("Setting working image in session", extra={"session_id": effective_session_id, "image_url": result.output_url})
-            await session_manager.set_current_working_image(
-                session_id=effective_session_id,
-                image_url=result.output_url,
-                user_id=request.user_id
-            )
+            # Set working image for image generations
+            if flow_result.prompt_type.value in ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW"]:
+                api_logger.debug("Setting working image in session", extra={"session_id": effective_session_id, "image_url": result.output_url})
+                await session_manager.set_current_working_image(
+                    session_id=effective_session_id,
+                    image_url=result.output_url,
+                    user_id=request.user_id
+                )
+            
+            # Set working video for video generations and edits
+            elif flow_result.prompt_type.value in ["NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO", "VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                api_logger.debug("Setting working video in session", extra={"session_id": effective_session_id, "video_url": result.output_url})
+                if hasattr(session_manager, 'set_current_working_video'):
+                    await session_manager.set_current_working_video(
+                        session_id=effective_session_id,
+                        video_url=result.output_url,
+                        user_id=request.user_id
+                    )
             
             # Verify the working image was set correctly
             verification = await session_manager.get_current_working_image(effective_session_id)
@@ -818,16 +926,25 @@ async def generate_content(
                     generation_type=generation_type,
                     model_used=result.model_used or "unknown",
                     xp_cost=xp_cost,
-                    actual_cost_usd=0.0,  # We'll implement cost tracking later
+                    actual_cost_usd=0.50 if generation_type in ["VIDEO_EDIT", "VIDEO_EDIT_REF"] else 0.0,
                     routing_decision=getattr(routing_decision, 'routing_logic', {}) if 'routing_decision' in locals() and routing_decision else {},
                     prompt=request.prompt
                 )
                 
                 if deduction_success:
                     api_logger.info(f"✅ GENERATION: XP deducted successfully - {xp_cost} XP from user {request.user_id}")
+                
+                    # Enhanced success logging for video editing
+                    if generation_type in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                        api_logger.info(f"🎬 VIDEO_EDIT XP DEDUCTION SUCCESS: {xp_cost} XP charged for gen4_aleph video editing")
+                        
                 else:
                     api_logger.warning(f"❌ GENERATION: XP deduction failed - User: {request.user_id}, Cost: {xp_cost}")
                     
+                    # Enhanced failure logging for video editing
+                    if generation_type in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
+                        api_logger.error(f"🎬 VIDEO_EDIT XP DEDUCTION FAILED: {xp_cost} XP could not be charged for gen4_aleph video editing")
+                        
             except Exception as deduction_error:
                 api_logger.error(f"💥 GENERATION: XP deduction error - {str(deduction_error)} - User: {request.user_id}")
                 # Don't fail the generation if XP deduction fails - log and continue
@@ -851,6 +968,12 @@ async def generate_content(
             store_generation_result,
             request, intent_analysis, routing_decision, result
         )
+        
+        # Add witty messages to the result if available from the flow service
+        if result.success and 'flow_result' in locals() and flow_result and flow_result.witty_messages:
+            result.witty_messages = flow_result.witty_messages
+            api_logger.debug("Added witty messages to response", extra={"message_count": len(flow_result.witty_messages)})
+            api_logger.info(f"WITTY MESSAGES: Generated {len(flow_result.witty_messages)} messages for user {request.user_id}")
         
         # Clean up temporary references created for this generation (background task)
         if result.success:
@@ -1132,4 +1255,41 @@ async def cleanup_temporary_references_task(user_id: str, generation_id: str):
     try:
         await ReferenceService.cleanup_temporary_references(user_id, generation_id)
     except Exception as e:
-        api_logger.debug("Error cleaning up temporary references", extra={"generation_id": generation_id, "error": str(e)}) 
+        api_logger.debug("Error cleaning up temporary references", extra={"generation_id": generation_id, "error": str(e)})
+
+@router.post("/generate-witty-messages")
+async def generate_witty_messages(
+    request: dict,
+    current_user: Optional[Dict] = Depends(get_current_user)
+):
+    """Generate witty messages for the current request"""
+    
+    try:
+        user_prompt = request.get("user_prompt")
+        prompt_type = request.get("prompt_type", "NEW_IMAGE")
+        context = request.get("context", {})
+        
+        if not user_prompt:
+            raise HTTPException(status_code=400, detail="user_prompt is required")
+        
+        # Import witty message service
+        from app.services.witty_message_service import witty_message_service
+        
+        # Generate witty messages
+        witty_messages = await witty_message_service.generate_witty_messages(
+            user_prompt=user_prompt,
+            prompt_type=prompt_type,
+            estimated_time=30,  # Default estimate
+            context=context
+        )
+        
+        return {
+            "success": True,
+            "witty_messages": witty_messages
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error generating witty messages: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating witty messages: {str(e)}") 

@@ -66,6 +66,24 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [paymentStep, setPaymentStep] = useState<'form' | 'processing' | 'success' | 'error'>('form');
   const [cardReady, setCardReady] = useState(false);
+  const [stripeReady, setStripeReady] = useState(false);
+
+  // Monitor Stripe readiness
+  React.useEffect(() => {
+    if (stripe && elements) {
+      setStripeReady(true);
+      console.log('Stripe and Elements ready');
+    }
+  }, [stripe, elements]);
+
+  // Cleanup function to reset state when component unmounts
+  React.useEffect(() => {
+    return () => {
+      setPaymentStep('form');
+      setIsProcessing(false);
+      setError(null);
+    };
+  }, []);
 
   const price = currency === 'usd' ? tier.monthly_price_usd : tier.monthly_price_aud;
   const currencySymbol = currency === 'usd' ? '$' : 'A$';
@@ -75,7 +93,13 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
 
     if (!stripe || !elements) {
       console.error('Stripe not loaded:', { stripe: !!stripe, elements: !!elements });
-      setError('Payment system not ready. Please try again.');
+      setError('Payment system not ready. Please wait a moment and try again.');
+      return;
+    }
+
+    if (!stripeReady) {
+      console.error('Stripe not fully initialized');
+      setError('Payment system initializing. Please wait a moment and try again.');
       return;
     }
 
@@ -86,20 +110,27 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
     }
 
     setIsProcessing(true);
-    setPaymentStep('processing');
     setError(null);
 
+    // Get the card element BEFORE changing any state that might trigger re-renders
     const cardElement = elements.getElement(CardElement);
-
+    
     if (!cardElement) {
-      console.error('Card element not found after getElement call');
-      setError('Card element not found. Please refresh and try again.');
-      setPaymentStep('error');
+      console.error('Card element not found. Elements state:', {
+        elements: !!elements,
+        stripe: !!stripe,
+        cardReady
+      });
+      setError('Payment form not ready. Please close and reopen the payment modal.');
       setIsProcessing(false);
       return;
     }
 
+    console.log('Card element successfully retrieved:', !!cardElement);
+
     try {
+      console.log('Creating payment method...');
+      
       // Create payment method
       const { error: paymentMethodError, paymentMethod } = await stripe.createPaymentMethod({
         type: 'card',
@@ -107,8 +138,14 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
       });
 
       if (paymentMethodError) {
+        console.error('Payment method error:', paymentMethodError);
         throw new Error(paymentMethodError.message);
       }
+
+      console.log('Payment method created successfully:', paymentMethod?.id);
+
+      // Only change to processing state AFTER we have the payment method
+      setPaymentStep('processing');
 
       // Call your backend to create subscription
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -141,7 +178,26 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
         throw new Error('Subscription creation failed');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Payment failed';
+      console.error('Payment process error:', err);
+      
+      let message = 'Payment failed';
+      if (err instanceof Error) {
+        message = err.message;
+        
+        // Specific handling for Stripe Element errors
+        if (message.includes('Element') || message.includes('mounted') || message.includes('IntegrationError')) {
+          message = 'Payment form error. Please close this modal and try again.';
+          console.error('Stripe Element unmounting detected. Component state:', {
+            paymentStep,
+            isProcessing,
+            cardReady,
+            stripeReady,
+            hasElements: !!elements,
+            hasStripe: !!stripe
+          });
+        }
+      }
+      
       setError(message);
       setPaymentStep('error');
     } finally {
@@ -151,16 +207,61 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
 
   if (paymentStep === 'processing') {
     return (
-      <div className="text-center py-8">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="inline-block"
-        >
-          <Loader2 className="w-12 h-12 text-blue-500" />
-        </motion.div>
-        <h3 className="text-lg font-semibold mt-4 mb-2">Processing Payment</h3>
-        <p className="text-gray-600">Please wait while we set up your subscription...</p>
+      <div className="relative">
+        {/* Keep the form rendered but overlay with processing state */}
+        <div className="opacity-30 pointer-events-none">
+          <div className="flex items-center mb-6">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-gray-100 rounded-lg mr-3"
+              disabled
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h3 className="text-lg font-semibold">Complete Payment</h3>
+              <p className="text-sm text-gray-600">
+                {tier.tier_display_name} - {currencySymbol}{price}/month
+              </p>
+            </div>
+          </div>
+
+          <form className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Card Information
+              </label>
+              <div className="border rounded-lg p-4">
+                <CardElement 
+                  options={cardElementOptions}
+                  onReady={() => setCardReady(true)}
+                  onChange={(event) => {
+                    if (event.error) {
+                      setError(event.error.message);
+                    } else {
+                      setError(null);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+        
+        {/* Processing overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-95 rounded-lg">
+          <div className="text-center py-8">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              className="inline-block"
+            >
+              <Loader2 className="w-12 h-12 text-blue-500" />
+            </motion.div>
+            <h3 className="text-lg font-semibold mt-4 mb-2">Processing Payment</h3>
+            <p className="text-gray-600">Please wait while we set up your subscription...</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -282,13 +383,23 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={!stripe || isProcessing || !cardReady}
+          disabled={!stripe || !stripeReady || isProcessing || !cardReady || paymentStep === 'processing'}
           className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
         >
           {isProcessing ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Processing...</span>
+            </>
+          ) : !stripeReady ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading payment system...</span>
+            </>
+          ) : !cardReady ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Card form loading...</span>
             </>
           ) : (
             <>
@@ -451,7 +562,10 @@ export default function PaymentModal({
               className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-2xl relative"
             >
               {/* Wrap everything in Elements to prevent remounting */}
-              <Elements stripe={stripePromise}>
+              <Elements 
+                stripe={stripePromise}
+                key={`payment-${selectedTier.id}`} // Stable key to prevent unmounting
+              >
                 <PaymentModalContent
                   selectedTier={selectedTier}
                   currentTier={currentTier}

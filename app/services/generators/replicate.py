@@ -85,7 +85,7 @@ class ReplicateGenerator(BaseGenerator):
                 result = await self._generate_flux_kontext_max(prompt, parameters)
             elif "flux" in model_name:
                 result = await self._generate_flux(prompt, parameters)
-            elif "google/veo" in model_name or "runway" in model_name or "minimax/video" in model_name:
+            elif "google/veo" in model_name or "runway" in model_name or "minimax/" in model_name:
                 result = await self._generate_video(prompt, parameters)
             else:
                 result = await self._generate_other(prompt, parameters)
@@ -653,6 +653,52 @@ class ReplicateGenerator(BaseGenerator):
             }
         return await asyncio.to_thread(sync_call)
 
+    async def _generate_flux_backup(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate image using flux-krea-dev as backup model"""
+        def sync_call():
+            model_version = "black-forest-labs/flux-krea-dev"
+            
+            print(f"[DEBUG REPLICATE BACKUP] 🔄 Using backup model: {model_version}")
+            
+            # Map parameters to flux-krea-dev format
+            inputs = {
+                "prompt": prompt,
+                "go_fast": True,
+                "guidance": 3,
+                "megapixels": "1",
+                "num_outputs": 1,
+                "aspect_ratio": parameters.get("aspect_ratio", "1:1"),
+                "output_format": "webp",  # flux-krea-dev supports webp
+                "output_quality": 95,
+                "prompt_strength": 0.8,
+                "num_inference_steps": 28
+            }
+            
+            print(f"[DEBUG REPLICATE BACKUP] Making backup API call with inputs: {inputs}")
+            
+            try:
+                output = replicate.run(model_version, input=inputs)
+                print(f"[DEBUG REPLICATE BACKUP] ✅ Backup model successful, output type: {type(output)}")
+                
+                # Handle flux-krea-dev response format (returns list of objects with .url() method)
+                if output and len(output) > 0:
+                    backup_url = output[0].url() if hasattr(output[0], 'url') else str(output[0])
+                    print(f"[DEBUG REPLICATE BACKUP] ✅ Extracted backup URL: {backup_url}")
+                    return {
+                        "output_url": backup_url,
+                        "metadata": {"model_version": model_version, "inputs": inputs, "backup_model": True}
+                    }
+                else:
+                    print(f"[DEBUG REPLICATE BACKUP] ❌ No output from backup model")
+                    return {"output_url": None, "metadata": {"backup_model": True, "error": "No output"}}
+                    
+            except Exception as e:
+                print(f"[DEBUG REPLICATE BACKUP] ❌ Backup model failed:")
+                print(f"[DEBUG REPLICATE BACKUP]   Error: {str(e)}")
+                raise  # Re-raise backup error
+                
+        return await asyncio.to_thread(sync_call)
+
     async def _generate_flux(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Generate image using a Flux model on Replicate (official schema)"""
         def sync_call():
@@ -680,22 +726,64 @@ class ReplicateGenerator(BaseGenerator):
             
             print(f"[DEBUG REPLICATE] Making replicate.run() call with inputs: {inputs}")
             
-            try:
-                output = replicate.run(model_version, input=inputs)
-                print(f"[DEBUG REPLICATE] ✅ API call successful, output type: {type(output)}")
-            except Exception as e:
-                print(f"[DEBUG REPLICATE] ❌ API call failed:")
-                print(f"[DEBUG REPLICATE]   Error type: {type(e).__name__}")
-                print(f"[DEBUG REPLICATE]   Error message: {str(e)}")
-                print(f"[DEBUG REPLICATE]   Token at time of error: {replicate.api_token}")
-                print(f"[DEBUG REPLICATE]   ENV token at time of error: {os.environ.get('REPLICATE_API_TOKEN', 'NOT_SET')}")
-                raise  # Re-raise the original error
+            # Retry logic for queue full errors
+            max_retries = 3
+            base_delay = 2  # seconds
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    if attempt > 0:
+                        delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff: 2s, 4s, 8s
+                        print(f"[DEBUG REPLICATE] 🔄 Retry attempt {attempt}/{max_retries} after {delay}s delay...")
+                        time.sleep(delay)
+                    
+                    output = replicate.run(model_version, input=inputs)
+                    print(f"[DEBUG REPLICATE] ✅ API call successful, output type: {type(output)}")
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    is_queue_full = "queue is full" in error_msg or "wait and retry" in error_msg
+                    
+                    print(f"[DEBUG REPLICATE] ❌ API call failed (attempt {attempt + 1}/{max_retries + 1}):")
+                    print(f"[DEBUG REPLICATE]   Error type: {type(e).__name__}")
+                    print(f"[DEBUG REPLICATE]   Error message: {str(e)}")
+                    print(f"[DEBUG REPLICATE]   Is queue full error: {is_queue_full}")
+                    
+                    # If it's a queue full error and we have retries left, continue the loop
+                    if is_queue_full and attempt < max_retries:
+                        print(f"[DEBUG REPLICATE] 🚦 Queue full detected, will retry...")
+                        continue
+                    
+                    # Otherwise, log and re-raise
+                    print(f"[DEBUG REPLICATE]   Token at time of error: {replicate.api_token}")
+                    print(f"[DEBUG REPLICATE]   ENV token at time of error: {os.environ.get('REPLICATE_API_TOKEN', 'NOT_SET')}")
+                    raise  # Re-raise the original error
             
             return {
                 "output_url": self._extract_url(output) if output else None,
                 "metadata": {"model_version": model_version, "inputs": inputs}
             }
-        return await asyncio.to_thread(sync_call)
+        
+        # Try primary model first
+        try:
+            return await asyncio.to_thread(sync_call)
+        except Exception as primary_error:
+            print(f"[DEBUG REPLICATE] 🚨 Primary model failed completely, trying backup model...")
+            print(f"[DEBUG REPLICATE]   Primary model error: {str(primary_error)}")
+            
+            # Try backup model (flux-krea-dev)
+            try:
+                backup_result = await self._generate_flux_backup(prompt, parameters)
+                print(f"[DEBUG REPLICATE] 🎉 Backup model succeeded!")
+                return backup_result
+            except Exception as backup_error:
+                print(f"[DEBUG REPLICATE] 💥 Backup model also failed: {str(backup_error)}")
+                print(f"[DEBUG REPLICATE] 🚫 Both primary and backup models failed, giving up")
+                # Log both errors for debugging
+                print(f"[DEBUG REPLICATE]   Primary error: {str(primary_error)}")
+                print(f"[DEBUG REPLICATE]   Backup error: {str(backup_error)}")
+                raise primary_error  # Re-raise the original primary model error
     
     async def _generate_video(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Generate video using video models on Replicate (google/veo-3, minimax/video-01)"""

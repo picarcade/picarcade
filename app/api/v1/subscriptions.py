@@ -162,12 +162,14 @@ async def create_subscription(
             raise HTTPException(status_code=500, detail="Failed to create Stripe customer")
         
         # Attach payment method to customer
+        logger.info(f"Attaching payment method {request.payment_method_id} to customer {stripe_customer_id}")
         stripe.PaymentMethod.attach(
             request.payment_method_id,
             customer=stripe_customer_id,
         )
         
         # Set as default payment method
+        logger.info(f"Setting default payment method for customer {stripe_customer_id}")
         stripe.Customer.modify(
             stripe_customer_id,
             invoice_settings={
@@ -186,6 +188,25 @@ async def create_subscription(
         
         if not subscription_result:
             raise HTTPException(status_code=500, detail="Failed to create subscription")
+        
+        # Update user subscription in database immediately (for development)
+        try:
+            await subscription_service.update_user_subscription_from_stripe(
+                user_id=user_id,
+                subscription_data={
+                    "id": subscription_result["subscription_id"],
+                    "status": subscription_result["status"],
+                    "current_period_start": subscription_result["current_period_start"],
+                    "current_period_end": subscription_result["current_period_end"],
+                    "metadata": {
+                        "user_id": user_id,
+                        "tier_name": request.tier_name
+                    }
+                }
+            )
+            logger.info(f"Updated user subscription in database for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to update user subscription in database: {e}")
         
         return {
             "success": True,

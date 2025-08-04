@@ -37,7 +37,9 @@ class TierPermissionMiddleware:
             "new_video": "NEW_VIDEO",
             "new_video_with_audio": "NEW_VIDEO_WITH_AUDIO",
             "image_to_video": "IMAGE_TO_VIDEO",
-            "edit_image_ref_to_video": "EDIT_IMAGE_REF_TO_VIDEO"
+            "edit_image_ref_to_video": "EDIT_IMAGE_REF_TO_VIDEO",
+            "video_edit": "VIDEO_EDIT",
+            "video_edit_ref": "VIDEO_EDIT_REF"
         }
     
     async def __call__(self, request: Request, call_next):

@@ -9,6 +9,7 @@ class CreativeIntent(str, Enum):
     EDIT_IMAGE = "edit_image"
     ENHANCE_IMAGE = "enhance_image"
     VIRTUAL_TRYON = "virtual_tryon"
+    VIDEO_EDIT = "video_edit"
 
 class QualityPriority(str, Enum):
     SPEED = "speed"
@@ -27,6 +28,7 @@ class GenerationRequest(BaseModel):
     quality_priority: QualityPriority = QualityPriority.BALANCED
     uploaded_images: Optional[List[str]] = Field(None, description="URLs of uploaded images")
     current_working_image: Optional[str] = Field(None, description="URL of the current working image in this session")
+    current_working_video: Optional[str] = Field(None, description="URL of the current working video in this session")
     reference_images: Optional[List[ReferenceImage]] = Field(None, description="Reference images with tags for @mentions")
     additional_params: Optional[Dict[str, Any]] = None
 
@@ -40,6 +42,7 @@ class GenerationResponse(BaseModel):
     input_image_used: Optional[str] = Field(None, description="URL of the input image that was edited (for flux-kontext)")
     image_source_type: Optional[str] = Field(None, description="Source of input image: 'uploaded', 'working_image', or None")
     references_used: Optional[List[ReferenceImage]] = Field(None, description="Reference images used in generation")
+    witty_messages: Optional[List[str]] = Field(None, description="Engaging messages to display during generation")
     metadata: Optional[Dict[str, Any]] = None
 
 class IntentAnalysis(BaseModel):

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     session_id TEXT UNIQUE NOT NULL,
     user_id TEXT,
     current_working_image TEXT,
+    current_working_video TEXT,
     metadata JSONB DEFAULT '{}',
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -35,6 +36,7 @@ COMMENT ON TABLE user_sessions IS 'Stores user session data including current wo
 COMMENT ON COLUMN user_sessions.session_id IS 'Unique session identifier, typically the JWT access token';
 COMMENT ON COLUMN user_sessions.user_id IS 'Supabase user ID from auth.users';
 COMMENT ON COLUMN user_sessions.current_working_image IS 'URL of the current working image for this session';
+COMMENT ON COLUMN user_sessions.current_working_video IS 'URL of the current working video for this session';
 COMMENT ON COLUMN user_sessions.metadata IS 'Additional session metadata as JSON';
 COMMENT ON COLUMN user_sessions.expires_at IS 'When this session expires and should be cleaned up';
 

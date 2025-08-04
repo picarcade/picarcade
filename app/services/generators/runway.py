@@ -80,20 +80,23 @@ class RunwayGenerator(BaseGenerator):
                     http_client=http_client
                 )
                 print("✅ DEBUG: RunwayML client initialized successfully with detailed logging")
+                print(f"🔍 DEBUG: Client attributes: {[attr for attr in dir(self.client) if not attr.startswith('_')]}")
                 logger.info(f"RunwayML client initialized with API version 2024-11-06 and detailed logging")
             except Exception as e:
                 print(f"❌ DEBUG: Failed to initialize RunwayML client with logging: {e}")
                 logger.warning(f"Could not initialize RunwayML client with logging: {e}")
                 try:
-                    # Fallback to basic client
+                    # Fallback to basic client - exactly as shown in Runway docs
                     print("🔄 DEBUG: Trying fallback basic client...")
-                    self.client = RunwayML(
-                        api_key=settings.runway_api_key,
-                        default_headers={
-                            "X-Runway-Version": "2024-11-06"
-                        }
-                    )
+                    # Match the docs: just RunwayML() with env var RUNWAYML_API_SECRET
+                    import os
+                    if not os.environ.get('RUNWAYML_API_SECRET'):
+                        os.environ['RUNWAYML_API_SECRET'] = settings.runway_api_key
+                        print("🔑 DEBUG: Set RUNWAYML_API_SECRET environment variable")
+                    
+                    self.client = RunwayML()  # Let it use env var as per docs
                     print("✅ DEBUG: Basic RunwayML client initialized successfully")
+                    print(f"🔍 DEBUG: Fallback client attributes: {[attr for attr in dir(self.client) if not attr.startswith('_')]}")
                     logger.info("Fallback basic RunwayML client initialized successfully")
                 except Exception as fallback_error:
                     print(f"❌ DEBUG: Fallback client also failed: {fallback_error}")
@@ -118,6 +121,8 @@ class RunwayGenerator(BaseGenerator):
         # Determine model name based on type
         if parameters.get("type") == "text_to_image_with_references":
             model_name = "runway_gen4_image"
+        elif parameters.get("type") == "video_edit":
+            model_name = "gen4_aleph"
         else:
             model_name = "runway_gen4_turbo"
         
@@ -131,6 +136,9 @@ class RunwayGenerator(BaseGenerator):
             if parameters.get("type") == "text_to_image_with_references":
                 logger.info("*** RUNWAY GENERATOR: Taking text_to_image_with_references path ***")
                 result = await self._generate_image_with_references(prompt, parameters)
+            elif parameters.get("type") == "video_edit":
+                logger.info("*** RUNWAY GENERATOR: Taking video_edit path with gen4_aleph ***")
+                result = await self._generate_video_edit(prompt, parameters)
             elif parameters.get("type") == "video":
                 logger.info("*** RUNWAY GENERATOR: Taking video path ***")
                 result = await self._generate_video(prompt, parameters)
@@ -165,10 +173,20 @@ class RunwayGenerator(BaseGenerator):
                     for ref in ref_images
                 ]
             
+            # Enhanced logging for successful video edit 
+            if parameters.get("type") == "video_edit":
+                logger.info(f"💰 gen4_aleph VIDEO_EDIT completed for generation {generation_id}")
+                logger.info(f"💰 VIDEO_EDIT cost impact: 300 XP (~$0.50) charged for successful video editing")
+            
             return response
             
         except Exception as e:
             error_msg = str(e)
+            
+            # Enhanced logging for video edit failures 
+            if parameters.get("type") == "video_edit":
+                logger.error(f"💰 gen4_aleph VIDEO_EDIT failed for generation {generation_id}: {e}")
+                logger.error(f"💰 VIDEO_EDIT cost impact: 300 XP (~$0.50) failed request")
             
             self._log_generation_attempt(
                 generation_id=generation_id,
@@ -951,4 +969,187 @@ class RunwayGenerator(BaseGenerator):
             if "Runway" in str(e) or "timeout" in str(e) or "face swap" in str(e):
                 raise
             else:
-                raise Exception(f"Runway face swap error: {str(e)}") 
+                raise Exception(f"Runway face swap error: {str(e)}")
+    
+    async def _generate_video_edit(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate video edit using Runway gen4_aleph (video_to_video)"""
+        
+        if not self.client:
+            raise Exception("Runway API key not configured")
+        
+        logger.info(f"🎬 Starting gen4_aleph video edit - Cost: 300 XP (~$0.50)")
+        
+        # Extract working video URI
+        video_uri = parameters.get("videoUri") or parameters.get("video_uri") or parameters.get("current_working_video")
+        if not video_uri:
+            raise Exception("VIDEO_EDIT requires a working video (videoUri parameter)")
+        
+        # Validate video URI format
+        logger.info(f"🎬 Raw video URI received: {video_uri}")
+        
+        # Check if it's a valid HTTPS URL
+        if not isinstance(video_uri, str) or not video_uri.startswith('https://'):
+            raise Exception(f"Invalid video URI format: {video_uri}. Must be HTTPS URL.")
+        
+        # Check if the URL looks like a Runway URL and may have an expired JWT
+        if 'dnznrvs05pmza.cloudfront.net' in video_uri and '_jwt=' in video_uri:
+            logger.warning(f"🎬 Video URI appears to be a Runway URL with JWT token - may be expired")
+            # Extract JWT and check expiration
+            try:
+                import jwt
+                import time
+                jwt_token = video_uri.split('_jwt=')[1]
+                decoded = jwt.decode(jwt_token, options={"verify_signature": False})
+                exp_time = decoded.get('exp', 0)
+                current_time = time.time()
+                if exp_time < current_time:
+                    logger.error(f"🎬 JWT token in video URL has expired! Exp: {exp_time}, Current: {current_time}")
+                    raise Exception(f"Video URL has expired JWT token. Please generate a fresh video.")
+                else:
+                    logger.info(f"🎬 JWT token is valid. Expires at: {exp_time}")
+            except Exception as jwt_error:
+                logger.warning(f"🎬 Could not validate JWT in video URL: {jwt_error}")
+        
+        # Ensure video URI is properly encoded
+        video_uri = video_uri.strip()
+        
+        # Use promptText from parameters if available
+        prompt_text = parameters.get("promptText", prompt)
+        
+        # Build request parameters exactly as shown in Runway docs
+        # The error shows "videoUri" so Runway expects camelCase, not snake_case
+        request_params = {
+            "model": "gen4_aleph", 
+            "videoUri": video_uri,  # camelCase as expected by API
+            "promptText": prompt_text,  # camelCase as expected by API
+            "ratio": parameters.get("ratio", "1280:720")  # Default to 16:9
+        }
+        
+        # Log the video URI to debug
+        logger.info(f"🎬 Video URI being sent: {video_uri}")
+        logger.info(f"🎬 Video URI type: {type(video_uri)}")
+        logger.info(f"🎬 Video URI length: {len(str(video_uri)) if video_uri else 'None'}")
+        
+        # Add optional parameters
+        if "seed" in parameters:
+            request_params["seed"] = parameters["seed"]
+            
+        # Add references if provided (maintain exact structure from docs)
+        references = parameters.get("references", [])
+        if references:
+            request_params["references"] = references
+            logger.info(f"🎬 VIDEO_EDIT with {len(references)} reference(s)")
+        
+        logger.info(f"🎬 VIDEO_EDIT Request: {request_params}")
+        
+        try:
+            # Use RunwayML SDK video_to_video method (available in v3.9.0+)
+            logger.info("🎬 Using RunwayML SDK client.video_to_video.create()...")
+            logger.info(f"🎬 Request parameters: {request_params}")
+            
+            # Convert camelCase params to snake_case for SDK (it may expect different naming)
+            sdk_params = {
+                "model": "gen4_aleph",
+                "video_uri": video_uri,  # SDK may expect snake_case
+                "prompt_text": prompt_text,  # SDK may expect snake_case  
+                "ratio": parameters.get("ratio", "1280:720")
+            }
+            
+            # Add optional parameters
+            if "seed" in parameters:
+                sdk_params["seed"] = parameters["seed"]
+                
+            if references:
+                sdk_params["references"] = references
+                logger.info(f"🎬 VIDEO_EDIT with {len(references)} reference(s)")
+            
+            logger.info(f"🎬 SDK parameters: {sdk_params}")
+            
+            # Create task using SDK and wait for completion in one call
+            print(f"⏳ Creating video edit task and waiting for completion...")
+            logger.info(f"🎬 Calling client.video_to_video.create().wait_for_task_output()...")
+            
+            task = self.client.video_to_video.create(**sdk_params).wait_for_task_output()
+            
+            logger.info(f"🎬 SDK task completed: {task}")
+            print(f"✅ VIDEO EDIT TASK COMPLETED via SDK")
+            
+            # Extract output URL from task response
+            if hasattr(task, 'output') and task.output and len(task.output) > 0:
+                output_url = task.output[0]
+                logger.info(f"🎬 Video edit completed: {output_url}")
+                
+                return {
+                    "output_url": output_url,
+                    "metadata": {
+                        "video_uri": video_uri,
+                        "prompt_text": prompt_text,
+                        "generation_type": "video_edit",
+                        "task_id": getattr(task, 'id', 'unknown'),
+                        "model": "gen4_aleph",
+                        "ratio": sdk_params.get("ratio"),
+                        "references": references,
+                        "sdk_version": "3.9.0+"
+                    }
+                }
+            else:
+                # Fallback: task might be just an ID, poll manually
+                task_id = getattr(task, 'id', None) or str(task)
+                logger.warning(f"🎬 SDK returned unexpected format, falling back to manual polling: {task_id}")
+                
+                # Manual polling fallback
+                max_attempts = 120
+                attempt = 0
+                
+                while attempt < max_attempts:
+                    await asyncio.sleep(2)
+                    attempt += 1
+                    
+                    try:
+                        task_status = self.client.tasks.retrieve(task_id)
+                        print(f"📊 Video edit task {task_id} status: {task_status.status} (attempt {attempt}/{max_attempts})")
+                        
+                        if task_status.status == "SUCCEEDED":
+                            if task_status.output and len(task_status.output) > 0:
+                                output_url = task_status.output[0]
+                                print(f"✅ VIDEO EDIT TASK COMPLETED: {output_url}")
+                                
+                                return {
+                                    "output_url": output_url,
+                                    "metadata": {
+                                        "video_uri": video_uri,
+                                        "prompt_text": prompt_text,
+                                        "generation_type": "video_edit",
+                                        "task_id": task_id,
+                                        "model": "gen4_aleph",
+                                        "ratio": sdk_params.get("ratio"),
+                                        "attempts": attempt,
+                                        "references": references,
+                                        "sdk_version": "3.9.0+_fallback"
+                                    }
+                                }
+                            else:
+                                raise Exception(f"Video edit task {task_id} succeeded but no output URL returned")
+                        
+                        elif task_status.status == "FAILED":
+                            error_msg = getattr(task_status, 'error', {})
+                            failure_code = getattr(task_status, 'failure_code', 'Unknown')
+                            raise Exception(f"Runway video edit task {task_id} failed: {error_msg} (Code: {failure_code})")
+                        
+                        elif task_status.status in ["PENDING", "RUNNING"]:
+                            continue
+                        else:
+                            logger.warning(f"🎬 Unknown task status: {task_status.status}")
+                            continue
+                            
+                    except Exception as poll_error:
+                        logger.error(f"🎬 Error polling task {task_id}: {poll_error}")
+                        if attempt >= max_attempts - 1:
+                            raise Exception(f"Failed to poll video edit task {task_id}: {poll_error}")
+                        continue
+                
+                raise Exception(f"Video edit task {task_id} timed out after {max_attempts * 2} seconds")
+            
+        except Exception as e:
+            logger.error(f"🎬 VIDEO_EDIT error: {e}")
+            raise 

@@ -389,9 +389,11 @@ class SupabaseSessionManager:
             expires_at = datetime.utcnow() + timedelta(hours=1)
             
             # First try to update existing session
+            # Clear working video when setting working image (mutual exclusion)
             update_response = self.supabase.table("user_sessions")\
                 .update({
                     "current_working_image": image_url,
+                    "current_working_video": None,  # Clear video when setting image
                     "expires_at": expires_at.isoformat() + "Z",
                     "updated_at": datetime.utcnow().isoformat() + "Z"
                 })\
@@ -405,6 +407,7 @@ class SupabaseSessionManager:
                         "session_id": session_id,
                         "user_id": user_id,
                         "current_working_image": image_url,
+                        "current_working_video": None,  # Ensure video is null when setting image
                         "expires_at": expires_at.isoformat() + "Z",
                         "updated_at": datetime.utcnow().isoformat() + "Z"
                     })\
@@ -416,13 +419,19 @@ class SupabaseSessionManager:
             if response.data:
                 print(f"[DEBUG] SessionManager: Session {session_id} updated successfully")
                 
-                # Update cache
+                # Update cache (set image, clear video)
                 cache = await self._get_cache()
                 if cache:
                     try:
-                        cache_key = f"session_image:{session_id}"
-                        await cache.set(cache_key, image_url, ttl=600)  # 10 minutes
-                        print(f"[DEBUG] Updated cache for session: {session_id}")
+                        # Set image cache
+                        image_cache_key = f"session_image:{session_id}"
+                        await cache.set(image_cache_key, image_url, ttl=600)  # 10 minutes
+                        
+                        # Clear video cache (mutual exclusion)
+                        video_cache_key = f"session_video:{session_id}"
+                        await cache.delete(video_cache_key)
+                        
+                        print(f"[DEBUG] Updated image cache and cleared video cache for session: {session_id}")
                     except Exception as e:
                         print(f"[WARNING] Cache update failed for session: {e}")
                 
@@ -487,6 +496,7 @@ class SupabaseSessionManager:
                     "session_id": result.data["session_id"],
                     "user_id": result.data["user_id"],
                     "current_working_image": result.data["current_working_image"],
+                    "current_working_video": result.data.get("current_working_video"),
                     "metadata": result.data["metadata"],
                     "created_at": result.data["created_at"],
                     "updated_at": result.data["updated_at"],
@@ -511,6 +521,139 @@ class SupabaseSessionManager:
         except Exception as e:
             if self.verbose_logging:
                 print(f"[DEBUG] SessionManager: Error signing out: {e}")
+    
+    async def get_current_working_video(self, session_id: str) -> Optional[str]:
+        """Get current working video for session (with caching)"""
+        
+        if not session_id:
+            return None
+        
+        # Check cache first
+        cache = await self._get_cache()
+        cache_key = f"session_video:{session_id}"
+        
+        if cache:
+            try:
+                cached_video = await cache.get(cache_key)
+                if cached_video:
+                    print(f"[DEBUG] Cache HIT for session video: {session_id}")
+                    return cached_video
+            except Exception as e:
+                print(f"[WARNING] Cache error for session video: {e}")
+        
+        # Query database if not cached
+        print(f"[DEBUG] SessionManager: Querying for session video: {session_id}")
+        
+        try:
+            response = self.supabase.table("user_sessions")\
+                .select("current_working_video, expires_at")\
+                .eq("session_id", session_id)\
+                .execute()
+            
+            # Handle case where session doesn't exist (0 rows)
+            if not response.data:
+                print(f"[DEBUG] SessionManager: Session {session_id} not found in database")
+                return None
+            
+            session_data = response.data[0]
+            if session_data:
+                expires_at_str = session_data.get("expires_at")
+                current_working_video = session_data.get("current_working_video")
+                
+                if expires_at_str:
+                    from datetime import datetime
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    current_time = datetime.now(expires_at.tzinfo)
+                    
+                    if current_time > expires_at:
+                        print(f"[DEBUG] SessionManager: Session {session_id} expired")
+                        return None
+                
+                if current_working_video:
+                    # Cache the result for 10 minutes
+                    if cache:
+                        try:
+                            await cache.set(cache_key, current_working_video, ttl=600)
+                            print(f"[DEBUG] Cached session video for: {session_id}")
+                        except Exception as e:
+                            print(f"[WARNING] Cache set failed for session: {e}")
+                    
+                    print(f"[DEBUG] SessionManager: Retrieved working video for {session_id}: {current_working_video}")
+                    return current_working_video
+                else:
+                    print(f"[DEBUG] SessionManager: No working video for session {session_id}")
+                    return None
+                
+        except Exception as e:
+            print(f"[ERROR] SessionManager: Error retrieving session video {session_id}: {e}")
+            return None
+    
+    async def set_current_working_video(self, session_id: str, video_url: str, user_id: str) -> bool:
+        """Set current working video for session (and update cache)"""
+        if not session_id or not video_url:
+            return False
+        
+        try:
+            from datetime import datetime, timedelta
+            
+            # Set expiry to 1 hour from now
+            expires_at = datetime.utcnow() + timedelta(hours=1)
+            
+            # First try to update existing session
+            # Clear working image when setting working video (mutual exclusion)
+            update_response = self.supabase.table("user_sessions")\
+                .update({
+                    "current_working_video": video_url,
+                    "current_working_image": None,  # Clear image when setting video
+                    "expires_at": expires_at.isoformat() + "Z",
+                    "updated_at": datetime.utcnow().isoformat() + "Z"
+                })\
+                .eq("session_id", session_id)\
+                .execute()
+            
+            # If no rows were updated, insert a new session
+            if not update_response.data:
+                insert_response = self.supabase.table("user_sessions")\
+                    .insert({
+                        "session_id": session_id,
+                        "user_id": user_id,
+                        "current_working_video": video_url,
+                        "current_working_image": None,  # Ensure image is null when setting video
+                        "expires_at": expires_at.isoformat() + "Z",
+                        "updated_at": datetime.utcnow().isoformat() + "Z"
+                    })\
+                    .execute()
+                response = insert_response
+            else:
+                response = update_response
+            
+            if response.data:
+                print(f"[DEBUG] SessionManager: Set working video for session {session_id}: {video_url}")
+                
+                # Update cache (set video, clear image)
+                cache = await self._get_cache()
+                if cache:
+                    try:
+                        # Set video cache
+                        video_cache_key = f"session_video:{session_id}"
+                        await cache.set(video_cache_key, video_url, ttl=600)
+                        
+                        # Clear image cache (mutual exclusion)
+                        image_cache_key = f"session_image:{session_id}"
+                        await cache.delete(image_cache_key)
+                        
+                        print(f"[DEBUG] Updated video cache and cleared image cache for session: {session_id}")
+                    except Exception as e:
+                        print(f"[WARNING] Cache update failed for session: {e}")
+                
+                return True
+            else:
+                print(f"[ERROR] SessionManager: Failed to set working video for session {session_id}")
+                return False
+                
+        except Exception as e:
+            print(f"[ERROR] SessionManager: Error setting session video {session_id}: {e}")
+            return False
 
 # Global session manager instance
 session_manager = SupabaseSessionManager() 

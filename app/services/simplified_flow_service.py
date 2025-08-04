@@ -19,7 +19,7 @@ import json
 import logging
 import time
 import os
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from enum import Enum
 import replicate
 
@@ -45,6 +45,9 @@ class PromptType(Enum):
     IMAGE_TO_VIDEO = "IMAGE_TO_VIDEO"
     IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # New: Image to video with audio (MiniMax)
     EDIT_IMAGE_REF_TO_VIDEO = "EDIT_IMAGE_REF_TO_VIDEO"
+    # New video editing flows for gen4_aleph
+    VIDEO_EDIT = "VIDEO_EDIT"  # Edit working video with prompt
+    VIDEO_EDIT_REF = "VIDEO_EDIT_REF"  # Edit working video with reference images/videos
 
 
 class SimplifiedFlowResult:
@@ -61,7 +64,8 @@ class SimplifiedFlowResult:
         uploaded_image: bool,
         referenced_image: bool,
         cache_hit: bool = False,
-        processing_time_ms: int = 0
+        processing_time_ms: int = 0,
+        witty_messages: Optional[List[str]] = None
     ):
         self.prompt_type = prompt_type
         self.enhanced_prompt = enhanced_prompt
@@ -73,6 +77,7 @@ class SimplifiedFlowResult:
         self.referenced_image = referenced_image
         self.cache_hit = cache_hit
         self.processing_time_ms = processing_time_ms
+        self.witty_messages = witty_messages or []
 
 
 class SimplifiedFlowService:
@@ -138,6 +143,7 @@ class SimplifiedFlowService:
         self, 
         user_prompt: str,
         active_image: bool = False,
+        active_video: bool = False,
         uploaded_image: bool = False, 
         referenced_image: bool = False,
         context: Optional[Dict[str, Any]] = None,
@@ -198,7 +204,7 @@ class SimplifiedFlowService:
                 return result
             
             # Generate cache key
-            cache_key = self._generate_cache_key(user_prompt, active_image, uploaded_image, referenced_image, user_id)
+            cache_key = self._generate_cache_key(user_prompt, active_image, active_video, uploaded_image, referenced_image, user_id)
             
             # Sprint 3: Check distributed cache
             cached_result = None
@@ -253,15 +259,51 @@ class SimplifiedFlowService:
                     circuit_breaker_state = self.circuit_breaker.state.value
                     prompt_type, enhanced_prompt, reasoning = await self.circuit_breaker.call(
                         self._classify_and_enhance,
-                        user_prompt, active_image, uploaded_image, referenced_image, context
+                        user_prompt, active_image, active_video, uploaded_image, referenced_image, context
                     )
                 else:
                     prompt_type, enhanced_prompt, reasoning = await self._classify_and_enhance(
-                        user_prompt, active_image, uploaded_image, referenced_image, context
+                        user_prompt, active_image, active_video, uploaded_image, referenced_image, context
                     )
                 
                 # Map to model based on CSV (with special rule for 2+ references)
                 model_to_use = self._get_model_for_type(prompt_type, total_references)
+                
+                # Generate witty messages for user engagement
+                witty_messages = []
+                try:
+                    from app.services.witty_message_service import witty_message_service
+                    
+                    # Build context for witty message generation
+                    witty_context = {
+                        "is_edit": "EDIT" in prompt_type,
+                        "has_references": referenced_image or (context and context.get("uploaded_images")),
+                        "is_video": "VIDEO" in prompt_type,
+                        "total_references": total_references,
+                        "working_image": context.get("working_image") if context else None,
+                        "working_video": context.get("working_video") if context else None,
+                        "uploaded_images": context.get("uploaded_images") if context else [],
+                        "user_id": user_id,
+                        "session_id": context.get("session_id") if context else None
+                    }
+                    
+                    # Estimate generation time based on model and type
+                    estimated_time = self._estimate_generation_time(prompt_type, model_to_use)
+                    
+                    witty_messages = await witty_message_service.generate_witty_messages(
+                        user_prompt=user_prompt,
+                        prompt_type=prompt_type,
+                        estimated_time=estimated_time,
+                        context=witty_context
+                    )
+                    
+                    logger.info(f"Generated {len(witty_messages)} witty messages for user {user_id}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to generate witty messages: {e}")
+                    # Use fallback messages
+                    witty_messages = self._get_fallback_witty_messages(prompt_type)
+                    logger.info(f"WITTY MESSAGES FALLBACK: Using {len(witty_messages)} fallback messages")
                 
                 # Create successful result
                 result = SimplifiedFlowResult(
@@ -274,7 +316,8 @@ class SimplifiedFlowService:
                     uploaded_image=uploaded_image,
                     referenced_image=referenced_image,
                     cache_hit=False,
-                    processing_time_ms=int((time.time() - start_time) * 1000)
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    witty_messages=witty_messages
                 )
                 
                 # Cache successful result
@@ -292,7 +335,7 @@ class SimplifiedFlowService:
                 
                 # Create fallback result
                 result = self._create_fallback_result(
-                    user_prompt, active_image, uploaded_image, referenced_image,
+                    user_prompt, active_image, active_video, uploaded_image, referenced_image,
                     reason=str(e), total_references=total_references
                 )
                 result.processing_time_ms = int((time.time() - start_time) * 1000)
@@ -335,6 +378,7 @@ class SimplifiedFlowService:
         self, 
         user_prompt: str,
         active_image: bool,
+        active_video: bool,
         uploaded_image: bool, 
         referenced_image: bool,
         context: Optional[Dict[str, Any]]
@@ -349,16 +393,31 @@ class SimplifiedFlowService:
 ANALYSIS:
 You are given these EXACT boolean flags - USE THESE VALUES ONLY:
 1. active_image: {active_image}
-2. uploaded_image: {uploaded_image} 
-3. referenced_image: {referenced_image}
+2. active_video: {active_video}
+3. uploaded_image: {uploaded_image} 
+4. referenced_image: {referenced_image}
 
-DO NOT try to detect images from the prompt - these flags tell you exactly what images are available!
+DO NOT try to detect images or videos from the prompt - these flags tell you exactly what content is available!
+
+🚨 CRITICAL RULE: If active_video=TRUE and the prompt contains ANY editing keywords (change, modify, edit, adjust, update, make it, turn it, transform, alter, add, remove, apply style, change colors, change weather, etc.), you MUST classify as VIDEO_EDIT or VIDEO_EDIT_REF, NOT as EDIT_IMAGE. This takes absolute priority over all other rules!
+
+🚨 ENHANCED PROMPT INDICATOR: If your enhanced prompt contains @working_video, this is a STRONG INDICATOR that you should classify as VIDEO_EDIT or VIDEO_EDIT_REF, never as EDIT_IMAGE variants!
 
 VIDEO DETECTION - FIRST PRIORITY:
-Check if the user wants VIDEO generation (not image). Video keywords include:
+Check if the user wants VIDEO generation or editing (not image). Video keywords include:
 - "create video", "make video", "generate video", "video of", "animate", "animation"
 - "make it move", "bring to life", "turn into video", "video version"
 - "moving", "motion", "animated", "video clip", "movie", "film"
+
+VIDEO EDITING DETECTION - HIGHEST PRIORITY:
+If active_video=TRUE AND user wants to edit/modify the working video:
+- "edit video", "change video", "modify video", "adjust video", "update video"
+- "make the video", "turn the video", "transform the video", "alter the video"
+- "change the weather", "make it sunny", "add rain", "change lighting", "change style"
+- "make it look", "apply style", "change colors", "add object", "remove background"
+- Style transfers: "change style to", "make it look like", "apply style from"
+- Weather/environment: "change weather", "make it sunny", "add rain", "change lighting"
+- Content modification: "add object", "remove background", "change colors"
 
 IF VIDEO INTENT DETECTED:
 CRITICAL: Veo 3 is ONLY used for pure text-to-video with audio when NO working image exists!
@@ -376,6 +435,22 @@ CRITICAL: If the video involves people communicating, conversing, or any scenari
 4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: MiniMax (image-to-video)
 5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
 6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
+
+🚨🚨🚨 VIDEO EDITING CLASSIFICATION (ABSOLUTE HIGHEST PRIORITY - check FIRST before ANY other classification):
+If user has WORKING VIDEO context (active_video=TRUE):
+
+MANDATORY DECISION TREE - FOLLOW EXACTLY:
+- If active_video=TRUE AND prompt contains edit keywords → MUST be VIDEO_EDIT or VIDEO_EDIT_REF
+- Edit keywords: "change", "modify", "edit", "adjust", "update", "make it", "turn it", "transform", "alter", "add", "remove", "apply style", "change colors", "change weather"
+- If your enhanced prompt uses @working_video → MUST be VIDEO_EDIT or VIDEO_EDIT_REF
+
+1. Working Video=YES, No edit intent → Type: NEW_VIDEO (creating new video, ignore working video)
+2. Working Video=YES, Edit intent, No references → Type: VIDEO_EDIT, Model: gen4_aleph (basic video editing)
+3. Working Video=YES, Edit intent, With references → Type: VIDEO_EDIT_REF, Model: gen4_aleph (reference-based video editing)
+
+🚨 EXAMPLES: 
+- "change the horse to be red" with active_video=TRUE → Type: VIDEO_EDIT (NOT EDIT_IMAGE!)
+- "add @pig walking behind" with active_video=TRUE + referenced_image=TRUE → Type: VIDEO_EDIT_REF (NOT EDIT_IMAGE_ADD_NEW!)
 
 IMAGE CLASSIFICATION RULES (if NO video intent):
 1. If Active Image=NO, Uploaded Image=NO, Referenced Image=NO → Type: NEW_IMAGE, Model: Flux 1.1 Pro
@@ -484,14 +559,26 @@ For prompt enhancement:
 **CRITICAL FOR EDIT_IMAGE_ADD_NEW: Focus on placing/adding new elements to scenes with clear spatial instructions, natural integration, and maintaining the photographic style and composition of the original image. ALWAYS explicitly include both @reference and @working_image tags in the enhanced prompt.**
 
 Return your analysis as JSON:
-{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|EDIT_IMAGE_ADD_NEW|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
+{{"prompt_type": "NEW_IMAGE|NEW_IMAGE_REF|EDIT_IMAGE|EDIT_IMAGE_REF|EDIT_IMAGE_ADD_NEW|NEW_VIDEO|NEW_VIDEO_WITH_AUDIO|IMAGE_TO_VIDEO|IMAGE_TO_VIDEO_WITH_AUDIO|EDIT_IMAGE_REF_TO_VIDEO|VIDEO_EDIT|VIDEO_EDIT_REF", "enhanced_prompt": "the appropriately enhanced or rewritten prompt"}}
 
 USER PROMPT TO ANALYZE: "{user_prompt}"
 
 REFERENCE TAG RULES:
 - active_image=True: Working image becomes @working_image
+- active_video=True: Working video becomes @working_video
 - uploaded_image=True: First uploaded image becomes @reference_1, second becomes @reference_2, etc.
 - referenced_image=True: Named references in prompt keep their original names (e.g., @blonde, @dress)
+
+🚨 CRITICAL VIDEO EDITING RULE: If active_video=TRUE, you MUST use @working_video in enhanced prompts, NOT @working_image!
+
+VIDEO EDITING ENHANCEMENT RULES (when active_video=TRUE):
+- VIDEO_EDIT: "Change the weather in @working_video to be sunny" 
+- VIDEO_EDIT_REF: "Add @pig walking behind the boy in @working_video" (when referenced_image=TRUE)
+- ALWAYS use @working_video as the target for video editing, never @working_image
+- For VIDEO_EDIT_REF: Include both @working_video and @reference tags in enhanced prompt
+- Examples:
+  * "change the horse to be red" → "Change the horse in @working_video to be red"
+  * "add @pig walking behind" → "Add @pig walking behind the boy in @working_video"
 
 CONTEXT FOR EDIT_IMAGE_REF vs EDIT_IMAGE_ADD_NEW:
 - When active_image=True, there is a WORKING IMAGE that is the main subject being edited (this becomes @working_image)
@@ -617,7 +704,8 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             # Only override LLM if it makes an obviously invalid classification
             # (For now, trust the LLM - we can add specific validation rules later if needed)
             valid_types = ["NEW_IMAGE", "NEW_IMAGE_REF", "EDIT_IMAGE", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW", 
-                          "NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]
+                          "NEW_VIDEO", "NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO",
+                          "VIDEO_EDIT", "VIDEO_EDIT_REF"]
             
             if llm_type not in valid_types:
                 print(f"[WARNING] SIMPLIFIED: LLM returned invalid type '{llm_type}', falling back to CSV rules")
@@ -784,7 +872,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             enhanced_prompt=enhanced_prompt,
             model_to_use=model_to_use,
             original_prompt=user_prompt,
-            reasoning=f"Fallback classification ({reasoning}) based on CSV rules",
+            reasoning="Fallback classification based on CSV rules",
             active_image=active_image,
             uploaded_image=uploaded_image,
             referenced_image=referenced_image,
@@ -1125,6 +1213,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         self,
         user_prompt: str,
         active_image: bool,
+        active_video: bool,
         uploaded_image: bool,
         referenced_image: bool,
         reason: str,
@@ -1132,11 +1221,31 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
     ) -> SimplifiedFlowResult:
         """Create fallback result when AI classification fails"""
         
-        # First check for video intent
-        video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
-                         "make it move", "bring to life", "turn into video", "video version", 
-                         "moving", "motion", "animated", "video clip", "movie", "film", "move", "transform"]
-        has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
+        # HIGHEST PRIORITY: Check for video editing (working video + edit intent)
+        if active_video:
+            edit_keywords = ["edit", "change", "modify", "adjust", "update", "make the", "turn the", "transform", 
+                           "alter", "change weather", "make it sunny", "add rain", "change lighting", "change style",
+                           "make it look", "apply style", "change colors", "add object", "remove background"]
+            has_edit_intent = any(keyword in user_prompt.lower() for keyword in edit_keywords)
+            
+            if has_edit_intent:
+                if referenced_image:
+                    prompt_type = "VIDEO_EDIT_REF"
+                    enhanced_prompt = user_prompt
+                else:
+                    prompt_type = "VIDEO_EDIT"
+                    enhanced_prompt = user_prompt
+            else:
+                # No edit intent with working video - create new video
+                prompt_type = "NEW_VIDEO"
+                enhanced_prompt = user_prompt
+        
+        # Check for general video intent
+        else:
+            video_keywords = ["create video", "make video", "generate video", "video of", "animate", "animation", 
+                             "make it move", "bring to life", "turn into video", "video version", 
+                             "moving", "motion", "animated", "video clip", "movie", "film", "move", "transform"]
+            has_video_intent = any(keyword in user_prompt.lower() for keyword in video_keywords)
         
         if has_video_intent:
             # Video flow fallback logic
@@ -1206,29 +1315,35 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
         # Get model for type
         model_to_use = self._get_model_for_type(prompt_type, total_references)
         
+        # Generate fallback witty messages
+        witty_messages = self._get_fallback_witty_messages(prompt_type)
+
+        
         return SimplifiedFlowResult(
             prompt_type=PromptType(prompt_type),
             enhanced_prompt=enhanced_prompt,
             model_to_use=model_to_use,
             original_prompt=user_prompt,
-            reasoning=f"Fallback classification ({reason}) based on CSV rules",
+            reasoning="Fallback classification based on CSV rules",
             active_image=active_image,
             uploaded_image=uploaded_image,
             referenced_image=referenced_image,
             cache_hit=False,
-            processing_time_ms=0
+            processing_time_ms=0,
+            witty_messages=witty_messages
         )
     
     def _generate_cache_key(
         self, 
         prompt: str, 
         active_image: bool, 
+        active_video: bool,
         uploaded_image: bool, 
         referenced_image: bool,
         user_id: str
     ) -> str:
         """Generate cache key for classification"""
-        flags_str = f"a:{active_image}_u:{uploaded_image}_r:{referenced_image}"
+        flags_str = f"a:{active_image}_v:{active_video}_u:{uploaded_image}_r:{referenced_image}"
         return f"simplified_flow_v3_{hash(prompt.lower())}_{hash(user_id)}_{flags_str}"
     
     def _result_to_cache_data(self, result: SimplifiedFlowResult) -> Dict[str, Any]:
@@ -1241,7 +1356,8 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             "reasoning": result.reasoning,
             "active_image": result.active_image,
             "uploaded_image": result.uploaded_image,
-            "referenced_image": result.referenced_image
+            "referenced_image": result.referenced_image,
+            "witty_messages": result.witty_messages
         }
     
     def _result_from_cache_data(self, cache_data: Dict[str, Any]) -> SimplifiedFlowResult:
@@ -1256,7 +1372,8 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             uploaded_image=cache_data["uploaded_image"],
             referenced_image=cache_data["referenced_image"],
             cache_hit=True,
-            processing_time_ms=0  # Will be updated
+            processing_time_ms=0,  # Will be updated
+            witty_messages=cache_data.get("witty_messages", [])
         )
     
     async def _log_classification(
@@ -1327,6 +1444,70 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             health["circuit_breaker"] = {"status": "not_initialized"}
         
         return health
+    
+    def _estimate_generation_time(self, prompt_type: str, model_to_use: str) -> int:
+        """Estimate generation time in seconds based on prompt type and model"""
+        
+        # Base times for different types
+        base_times = {
+            "NEW_IMAGE": 25,
+            "NEW_IMAGE_REF": 30,
+            "EDIT_IMAGE": 30,
+            "EDIT_IMAGE_REF": 35,
+            "EDIT_IMAGE_ADD_NEW": 35,
+            "NEW_VIDEO": 45,
+            "NEW_VIDEO_WITH_AUDIO": 50,
+            "IMAGE_TO_VIDEO": 40,
+            "IMAGE_TO_VIDEO_WITH_AUDIO": 45,
+            "EDIT_IMAGE_REF_TO_VIDEO": 45,
+            "VIDEO_EDIT": 60,
+            "VIDEO_EDIT_REF": 65
+        }
+        
+        # Get base time for prompt type
+        base_time = base_times.get(prompt_type, 30)
+        
+        # Adjust based on model complexity
+        model_adjustments = {
+            "Flux 1.1 Pro": 0,  # Standard
+            "Kontext": 5,       # Slightly slower
+            "Runway": 10,       # Slower for complex operations
+            "gen4_aleph": 15,   # Video editing is slower
+            "Veo 3": 20,        # Video generation is slower
+            "MiniMax": 15       # Video generation is slower
+        }
+        
+        adjustment = model_adjustments.get(model_to_use, 0)
+        estimated_time = base_time + adjustment
+        
+        # Ensure reasonable bounds
+        return max(20, min(90, estimated_time))
+    
+    def _get_fallback_witty_messages(self, prompt_type: str) -> List[str]:
+        """Get fallback witty messages if generation fails"""
+        
+        base_messages = [
+            "Creating something amazing for you... ✨",
+            "This might take around 30 seconds, but it'll be worth the wait",
+            "Your creative vision is coming to life... 🎨",
+            "Working some AI magic here... 🔮",
+            "Almost there! Your masterpiece is being crafted",
+            "Just 30 seconds until your creation is ready",
+            "The AI is putting the finishing touches on your request",
+            "Something special is being generated just for you",
+            "Your imagination is becoming reality... 🌟",
+            "The wait will be worth it - this is going to look incredible!"
+        ]
+        
+        # Customize based on prompt type
+        if "EDIT" in prompt_type:
+            base_messages[0] = "Enhancing your creation with some AI magic... ✨"
+            base_messages[2] = "Your improvements are being applied... 🎨"
+        elif "VIDEO" in prompt_type:
+            base_messages[0] = "Bringing your vision to life with motion... 🎬"
+            base_messages[2] = "Your video is being crafted frame by frame... 🎨"
+        
+        return base_messages
     
     async def get_stats(self) -> Dict[str, Any]:
         """Get simplified flow classification statistics using Supabase client (with caching)"""

@@ -10,6 +10,7 @@ export interface GenerationRequest {
   quality_priority: 'speed' | 'balanced' | 'quality'
   uploaded_images?: string[]  // Array of image URLs
   current_working_image?: string  // Current working image URL
+  current_working_video?: string  // Current working video URL for video editing
   reference_images?: ReferenceImage[]  // Reference images with tags for @mentions
   additional_params?: Record<string, any>
 }
@@ -24,6 +25,7 @@ export interface GenerationResponse {
   input_image_used?: string  // URL of input image that was edited
   image_source_type?: string  // "uploaded", "working_image", or null
   references_used?: ReferenceImage[]  // Reference images used in generation
+  witty_messages?: string[]  // Engaging messages to display during generation
   metadata?: Record<string, any>
 }
 

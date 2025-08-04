@@ -70,7 +70,7 @@ class BasicIntentParser:
             "announces", "whispers", "screams", "breaking news"
         ]
     
-    async def analyze_intent(self, prompt: str, user_context: Dict[str, Any] = None, generation_id: str = None, uploaded_images: list = None, current_working_image: str = None) -> IntentAnalysis:
+    async def analyze_intent(self, prompt: str, user_context: Dict[str, Any] = None, generation_id: str = None, uploaded_images: list = None, current_working_image: str = None, current_working_video: str = None) -> IntentAnalysis:
         """
         Analyze user prompt to determine creative intent
         
@@ -90,12 +90,19 @@ class BasicIntentParser:
         # Check for references - this influences model selection
         has_references = bool(re.search(r'@\w+', prompt))
         
-        # Priority 0: Virtual Try-On Requests (highest priority)
-        if VirtualTryOnService.is_virtual_tryon_request(prompt):
+        # Priority 0: Video Edit Requests (highest priority when working video exists)
+        if current_working_video and self._is_video_editing_prompt(prompt_lower):
+            intent = CreativeIntent.VIDEO_EDIT
+            content_type = "video_edit"
+            confidence = 0.95
+            print(f"[DEBUG] Intent Parser: Priority 0 - Video edit request detected with working video")
+        
+        # Priority 0.5: Virtual Try-On Requests (highest priority)
+        elif VirtualTryOnService.is_virtual_tryon_request(prompt):
             intent = CreativeIntent.VIRTUAL_TRYON
             content_type = "virtual_tryon"
             confidence = 0.95
-            print(f"[DEBUG] Intent Parser: Priority 0 - Virtual try-on request detected")
+            print(f"[DEBUG] Intent Parser: Priority 0.5 - Virtual try-on request detected")
         
         elif has_references:
             print(f"[DEBUG] Intent Parser: References detected in prompt, will force image generation")
@@ -228,9 +235,19 @@ class BasicIntentParser:
         if word_count > 30 or has_complex_elements:
             return "complex"
         elif word_count > 15:
-            return "moderate" 
-        else:
-            return "simple"
+            return "moderate"
+    
+    def _is_video_editing_prompt(self, prompt: str) -> bool:
+        """Check if prompt suggests video editing"""
+        video_edit_keywords = [
+            "edit video", "change video", "modify video", "adjust video", "update video",
+            "make the video", "turn the video", "transform the video", "alter the video",
+            "change weather", "make it sunny", "add rain", "change lighting",
+            "change style", "make it look", "apply style", "change colors",
+            "add object", "remove background", "change background"
+        ]
+        
+        return any(keyword in prompt for keyword in video_edit_keywords)
     
     def _suggests_editing_context(self, prompt_lower: str) -> bool:
         """
