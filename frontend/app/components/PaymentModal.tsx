@@ -383,7 +383,7 @@ function PaymentForm({ tier, currency, onSuccess, onBack }: PaymentFormProps) {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={!stripe || !stripeReady || isProcessing || !cardReady || paymentStep === 'processing'}
+          disabled={!stripe || !stripeReady || isProcessing || !cardReady}
           className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
         >
           {isProcessing ? (
