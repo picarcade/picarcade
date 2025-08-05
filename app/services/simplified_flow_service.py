@@ -43,7 +43,7 @@ class PromptType(Enum):
     NEW_VIDEO = "NEW_VIDEO"
     NEW_VIDEO_WITH_AUDIO = "NEW_VIDEO_WITH_AUDIO"  # New: Text-to-video with audio (Veo 3) - no working image
     IMAGE_TO_VIDEO = "IMAGE_TO_VIDEO"
-    IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # New: Image to video with audio (MiniMax)
+    IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # Deprecated: VEO-3-Fast cannot accept image inputs
     EDIT_IMAGE_REF_TO_VIDEO = "EDIT_IMAGE_REF_TO_VIDEO"
     # New video editing flows for gen4_aleph
     VIDEO_EDIT = "VIDEO_EDIT"  # Edit working video with prompt
@@ -431,10 +431,10 @@ CRITICAL: If the video involves people communicating, conversing, or any scenari
 
 1. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: NEW_VIDEO_WITH_AUDIO, Model: Veo 3 (text-to-video with audio)
 2. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: NEW_VIDEO, Model: MiniMax (text-to-video)
-3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: MiniMax (image-to-video with audio)
-4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: MiniMax (image-to-video)
-5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
-6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
+3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: Runway (image-to-video - VEO-3-Fast cannot accept image inputs)
+4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: Runway (image-to-video)
+5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: Runway (reference-based video)
+6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: Runway (reference-based video)
 
 🚨🚨🚨 VIDEO EDITING CLASSIFICATION (ABSOLUTE HIGHEST PRIORITY - check FIRST before ANY other classification):
 If user has WORKING VIDEO context (active_video=TRUE):
@@ -714,6 +714,13 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 reasoning += f" (Corrected from invalid '{result.get('type')}' to {correct_type} via CSV fallback)"
             else:
                 print(f"[DEBUG] SIMPLIFIED: Trusting LLM classification: {llm_type}")
+                
+                # Special correction: VEO-3-Fast cannot accept image inputs
+                if llm_type == "IMAGE_TO_VIDEO_WITH_AUDIO" and active_image:
+                    print(f"[DEBUG] SIMPLIFIED: Correcting IMAGE_TO_VIDEO_WITH_AUDIO to IMAGE_TO_VIDEO - VEO-3-Fast cannot accept image inputs")
+                    llm_type = "IMAGE_TO_VIDEO"
+                    reasoning += " (Auto-corrected: VEO-3-Fast cannot accept image inputs, using Runway instead)"
+                
                 # CSV rules are NOT enforced - LLM decision is trusted
                 
                 # If we did a CSV fallback to EDIT_IMAGE_REF, ensure proper prompt format
@@ -822,12 +829,9 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
                                      "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
                                      "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
-                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
-                
-                if has_audio_intent:
-                    return ("IMAGE_TO_VIDEO_WITH_AUDIO", user_prompt, "Fallback: Image to video with audio (Veo 3)")
-                else:
-                    return ("IMAGE_TO_VIDEO", user_prompt, "Fallback: Image to video conversion (Runway)")
+                # VEO-3-Fast cannot accept image inputs, so always use IMAGE_TO_VIDEO for image-to-video
+                # regardless of audio intent - Runway will handle it
+                return ("IMAGE_TO_VIDEO", user_prompt, "Fallback: Image to video conversion (Runway - VEO-3-Fast cannot accept image inputs)")
             else:
                 # Any combination with references = EDIT_IMAGE_REF_TO_VIDEO
                 return ("EDIT_IMAGE_REF_TO_VIDEO", user_prompt, "Fallback: Video generation with image references")
