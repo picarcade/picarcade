@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { X, Tag, Search, Trash2, Upload, Image as ImageIcon, Edit3, Camera } from 'lucide-react'
 import { getUserReferences, createReference, deleteReference, updateReference, uploadImage } from '../lib/api'
 import type { Reference } from '../types'
+import ShareButton from './ShareButton'
 
 interface ReferencesPanelProps {
   isOpen: boolean
@@ -535,6 +536,12 @@ export default function ReferencesPanel({ isOpen, onClose, userId, onReferenceSe
                     
                     {/* Action buttons */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ShareButton 
+                        url={reference.image_url}
+                        title={`Check out this reference image: @${reference.tag}`}
+                        isVideo={false}
+                        size="sm"
+                      />
                       <button
                         onClick={(e) => {
                           e.stopPropagation()

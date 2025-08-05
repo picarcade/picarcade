@@ -7,6 +7,7 @@ import GenerationHistory from './GenerationHistory';
 import ReferencesPanel from './ReferencesPanel';
 import TagImageModal from './TagImageModal';
 import ImageMaximizeModal from './ImageMaximizeModal';
+import ShareButton from './ShareButton';
 import { AuthModal } from './AuthModal';
 import { useAuth } from './AuthProvider';
 import { getOrCreateUserId } from '../lib/userUtils';
@@ -961,13 +962,24 @@ const PerplexityInterface = () => {
               {/* Show current result or previous result while generating */}
               {(result?.success && result?.output_url) ? (
                 result.output_url.includes('.mp4') || result.output_url.includes('video') || result.output_url.includes('mock-image-to-video') ? (
-                  <video
-                    src={result.output_url}
-                    controls
-                    className="max-w-full h-auto max-h-96 rounded-lg mx-auto shadow-lg"
-                  >
-                    Your browser does not support video playback.
-                  </video>
+                  <div className="relative inline-block">
+                    <video
+                      src={result.output_url}
+                      controls
+                      className="max-w-full h-auto max-h-96 rounded-lg mx-auto shadow-lg"
+                    >
+                      Your browser does not support video playback.
+                    </video>
+                    {/* Share button overlay for video */}
+                    <div className="absolute top-2 right-2">
+                      <ShareButton 
+                        url={result.output_url}
+                        title="Check out this amazing AI-generated video!"
+                        isVideo={true}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative inline-block">
                     <img 
@@ -977,35 +989,54 @@ const PerplexityInterface = () => {
                       onClick={() => result.output_url && handleImageMaximize(result.output_url)}
                       title="Click to maximize image"
                     />
-                    {/* Tag icon overlay */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        console.log('Tagged images:', taggedImages, 'Current URL:', result.output_url, 'Is tagged:', result.output_url ? taggedImages.has(result.output_url) : false);
-                        if (result.output_url) {
-                          handleTagImage(result.output_url);
-                        }
-                      }}
-                      className={`absolute top-2 right-2 p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
-                        taggedImages.has(result.output_url) 
-                          ? 'bg-green-600 hover:bg-green-700' 
-                          : 'bg-gray-600 hover:bg-gray-700'
-                      }`}
-                      title={taggedImages.has(result.output_url) ? "Image tagged" : "Tag this image"}
-                    >
-                      <Tag className="w-4 h-4" />
-                    </button>
+                    {/* Action icons overlay */}
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <ShareButton 
+                        url={result.output_url}
+                        title="Check out this amazing AI-generated image!"
+                        isVideo={false}
+                        size="sm"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('Tagged images:', taggedImages, 'Current URL:', result.output_url, 'Is tagged:', result.output_url ? taggedImages.has(result.output_url) : false);
+                          if (result.output_url) {
+                            handleTagImage(result.output_url);
+                          }
+                        }}
+                        className={`p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
+                          taggedImages.has(result.output_url) 
+                            ? 'bg-green-600 hover:bg-green-700' 
+                            : 'bg-gray-600 hover:bg-gray-700'
+                        }`}
+                        title={taggedImages.has(result.output_url) ? "Image tagged" : "Tag this image"}
+                      >
+                        <Tag className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )
               ) : (previousResult?.success && previousResult?.output_url) ? (
                 previousResult.output_url.includes('.mp4') || previousResult.output_url.includes('video') || previousResult.output_url.includes('mock-image-to-video') ? (
-                  <video
-                    src={previousResult.output_url}
-                    controls
-                    className="max-w-full h-auto max-h-96 rounded-lg mx-auto shadow-lg opacity-75"
-                  >
-                    Your browser does not support video playback.
-                  </video>
+                  <div className="relative inline-block">
+                    <video
+                      src={previousResult.output_url}
+                      controls
+                      className="max-w-full h-auto max-h-96 rounded-lg mx-auto shadow-lg opacity-75"
+                    >
+                      Your browser does not support video playback.
+                    </video>
+                    {/* Share button overlay for previous video */}
+                    <div className="absolute top-2 right-2">
+                      <ShareButton 
+                        url={previousResult.output_url}
+                        title="Check out this amazing AI-generated video!"
+                        isVideo={true}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative inline-block">
                     <img 
@@ -1015,23 +1046,31 @@ const PerplexityInterface = () => {
                       onClick={() => previousResult.output_url && handleImageMaximize(previousResult.output_url)}
                       title="Click to maximize image"
                     />
-                    {/* Tag icon overlay */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (previousResult.output_url) {
-                          handleTagImage(previousResult.output_url);
-                        }
-                      }}
-                      className={`absolute top-2 right-2 p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
-                        taggedImages.has(previousResult.output_url) 
-                          ? 'bg-green-600 hover:bg-green-700' 
-                          : 'bg-gray-600 hover:bg-gray-700'
-                      }`}
-                      title={taggedImages.has(previousResult.output_url) ? "Image tagged" : "Tag this image"}
-                    >
-                      <Tag className="w-4 h-4" />
-                    </button>
+                    {/* Action icons overlay */}
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <ShareButton 
+                        url={previousResult.output_url}
+                        title="Check out this amazing AI-generated image!"
+                        isVideo={false}
+                        size="sm"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (previousResult.output_url) {
+                            handleTagImage(previousResult.output_url);
+                          }
+                        }}
+                        className={`p-2 text-white rounded-full transition-all opacity-75 hover:opacity-100 shadow-lg ${
+                          taggedImages.has(previousResult.output_url) 
+                            ? 'bg-green-600 hover:bg-green-700' 
+                            : 'bg-gray-600 hover:bg-gray-700'
+                        }`}
+                        title={taggedImages.has(previousResult.output_url) ? "Image tagged" : "Tag this image"}
+                      >
+                        <Tag className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )
               ) : null}

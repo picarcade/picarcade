@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react'
+import ShareButton from './ShareButton'
 
 interface ImageMaximizeModalProps {
   isOpen: boolean
@@ -154,6 +155,13 @@ export default function ImageMaximizeModal({
     >
       {/* Control buttons */}
       <div className="absolute top-4 right-4 flex gap-2 z-10">
+        <ShareButton 
+          url={imageUrl}
+          title="Check out this amazing AI-generated image!"
+          isVideo={false}
+          size="lg"
+          className="bg-black/50 hover:bg-black/70"
+        />
         <button
           onClick={handleZoomOut}
           className="p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
