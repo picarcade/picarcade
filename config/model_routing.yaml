@@ -33,13 +33,13 @@ model_routing:
         generator: "replicate"
         # No fallback - VEO-3-Fast is the only option for audio
       IMAGE_TO_VIDEO:
-        model: "gen4_turbo"
-        generator: "runway"
-        # No fallback - Runway is primary for image-to-video (bypass Hailuo-02 safety restrictions)
-      IMAGE_TO_VIDEO_WITH_AUDIO:
-        model: "google/veo-3-fast"
+        model: "minimax/video-01"
         generator: "replicate"
-        # No fallback - VEO-3-Fast is the only option for audio
+        # Use MiniMax for image-to-video (bypass Hailuo-02 safety restrictions)
+      IMAGE_TO_VIDEO_WITH_AUDIO:
+        model: "minimax/video-01"
+        generator: "replicate"
+        # Use standard image-to-video model when active image exists, even with audio intent
       EDIT_IMAGE_REF_TO_VIDEO:
         model: "gen4_turbo"
         generator: "runway"

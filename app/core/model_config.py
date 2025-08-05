@@ -228,8 +228,8 @@ class ModelConfigManager:
                     "video_generation": {
                         "NEW_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
                         "NEW_VIDEO_REF": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
-                        "IMAGE_TO_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
-                        "IMAGE_TO_VIDEO_WITH_AUDIO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
+                        "IMAGE_TO_VIDEO": {"model": "minimax/video-01", "generator": "replicate"},
+                        "IMAGE_TO_VIDEO_WITH_AUDIO": {"model": "minimax/video-01", "generator": "replicate"},
                         "EDIT_IMAGE_REF_TO_VIDEO": {"model": "veo-3.0-generate-preview", "generator": "google_ai"},
                         "EDIT_VIDEO": {"model": "runway_gen4_video"},
                         "EDIT_VIDEO_REF": {"model": "runway_gen4_video"}

@@ -431,7 +431,7 @@ CRITICAL: If the video involves people communicating, conversing, or any scenari
 
 1. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: NEW_VIDEO_WITH_AUDIO, Model: Veo 3 (text-to-video with audio)
 2. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: NEW_VIDEO, Model: MiniMax (text-to-video)
-3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: MiniMax (image-to-video with audio)
+3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: MiniMax (image-to-video with audio - NOT Veo even with audio!)
 4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: MiniMax (image-to-video)
 5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
 6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: MiniMax (reference-based video)
@@ -993,7 +993,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "NEW_VIDEO": "minimax/video-01",
                 "NEW_VIDEO_WITH_AUDIO": "google/veo-3",
                 "IMAGE_TO_VIDEO": "minimax/video-01",
-                "IMAGE_TO_VIDEO_WITH_AUDIO": "google/veo-3",
+                "IMAGE_TO_VIDEO_WITH_AUDIO": "minimax/video-01",
                 "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"
             }
             return fallback_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
