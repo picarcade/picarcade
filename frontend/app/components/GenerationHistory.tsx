@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { History, Wand2, CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink, Tag, Trash2, Play } from 'lucide-react'
 import type { GenerationHistoryProps, HistoryItem } from '../types'
 import { getUserHistory } from '../lib/api'
+import ShareButton from './ShareButton'
 
 export default function GenerationHistory({ refreshTrigger, userId, onSelectImage, onTagImage, onDeleteItem, taggedImages }: GenerationHistoryProps) {
   const [history, setHistory] = useState<HistoryItem[]>([])
@@ -283,6 +284,12 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                         
                         {/* Action icons on hover */}
                         <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity">
+                          <ShareButton 
+                            url={item.output_url!}
+                            title={`Check out this AI-generated ${isVideo(item.output_url!) ? 'video' : 'image'}! ${item.prompt}`}
+                            isVideo={isVideo(item.output_url!)}
+                            size="sm"
+                          />
                           {onTagImage && item.output_url && !isVideo(item.output_url) && (
                             <button
                               onClick={(e) => {

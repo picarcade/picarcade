@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { CheckCircle, XCircle, Eye, Copy, Save, Clock, Tag } from 'lucide-react'
 import Image from 'next/image'
 import type { GenerationResultProps } from '../types'
+import ShareButton from './ShareButton'
 
 export default function GenerationResult({ result, isGenerating }: GenerationResultProps) {
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -47,13 +48,24 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
           {/* Generated Content */}
           <div className="relative bg-gray-100 rounded-lg overflow-hidden">
             {result.output_url.includes('.mp4') || result.output_url.includes('video') ? (
-              <video
-                src={result.output_url}
-                controls
-                className="w-full h-auto max-h-96 object-contain"
-              >
-                Your browser does not support video playback.
-              </video>
+              <div className="relative group">
+                <video
+                  src={result.output_url}
+                  controls
+                  className="w-full h-auto max-h-96 object-contain"
+                >
+                  Your browser does not support video playback.
+                </video>
+                {/* Share icon overlay for video */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <ShareButton 
+                    url={result.output_url}
+                    title={`Check out this AI-generated video! Created with ${result.model_used}`}
+                    isVideo={true}
+                    size="sm"
+                  />
+                </div>
+              </div>
             ) : (
               <div className="relative group">
                 <Image
@@ -69,8 +81,14 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
                     <Eye className="w-8 h-8 text-gray-400" />
                   </div>
                 )}
-                {/* Tag icon overlay */}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                {/* Action icons overlay */}
+                <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <ShareButton 
+                    url={result.output_url}
+                    title={`Check out this AI-generated image! Created with ${result.model_used}`}
+                    isVideo={false}
+                    size="sm"
+                  />
                   <button
                     onClick={() => {/* TODO: Implement tag functionality */}}
                     className="p-2 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors shadow-lg"
@@ -99,6 +117,13 @@ export default function GenerationResult({ result, isGenerating }: GenerationRes
               <Copy className="w-4 h-4" />
               Copy URL
             </button>
+            <ShareButton 
+              url={result.output_url}
+              title={`Check out this AI-generated ${result.output_url.includes('.mp4') || result.output_url.includes('video') ? 'video' : 'image'}! Created with ${result.model_used}`}
+              isVideo={result.output_url.includes('.mp4') || result.output_url.includes('video')}
+              showText={true}
+              className="bg-purple-600 hover:bg-purple-700"
+            />
             <button
               onClick={() => {/* Future: Save to references */}}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
