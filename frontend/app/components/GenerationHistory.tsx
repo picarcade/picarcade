@@ -11,6 +11,10 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
   const carouselRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number>(0)
   const touchEndX = useRef<number>(0)
+  const touchStartY = useRef<number>(0)
+  const touchStartTime = useRef<number>(0)
+  const isSwiping = useRef<boolean>(false)
+  const lastSwipeTime = useRef<number>(0)
 
   const itemsPerPage = 3
   const totalPages = Math.ceil(history.length / itemsPerPage)
@@ -63,17 +67,43 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+    touchStartTime.current = Date.now()
+    isSwiping.current = false
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
     touchEndX.current = e.touches[0].clientX
+    
+    // Calculate movement distance
+    const deltaX = Math.abs(touchEndX.current - touchStartX.current)
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartY.current)
+    
+    // If horizontal movement is significant and greater than vertical movement, consider it a swipe
+    if (deltaX > 20 && deltaX > deltaY) {
+      isSwiping.current = true
+      // Prevent scrolling during horizontal swipe
+      e.preventDefault()
+    }
   }
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
     const swipeThreshold = 50
     const swipeDistance = touchStartX.current - touchEndX.current
+    const touchDuration = Date.now() - touchStartTime.current
+    const totalDistance = Math.abs(swipeDistance)
 
-    if (Math.abs(swipeDistance) > swipeThreshold) {
+    // Only process as swipe if:
+    // 1. It was detected as swiping during move
+    // 2. Distance is above threshold
+    // 3. Duration is reasonable for a swipe (not too slow)
+    if (isSwiping.current && totalDistance > swipeThreshold && touchDuration < 800) {
+      // Prevent any click events from firing
+      e.preventDefault()
+      
+      // Record the time of the swipe
+      lastSwipeTime.current = Date.now()
+      
       if (swipeDistance > 0) {
         // Swipe left - next page
         nextPage()
@@ -82,6 +112,9 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
         prevPage()
       }
     }
+    
+    // Reset swipe state
+    isSwiping.current = false
   }
 
   const getCurrentPageItems = () => {
@@ -93,7 +126,15 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
     return url.includes('.mp4') || url.includes('video') || url.includes('mock-image-to-video')
   }
 
-  const handleImageClick = (item: HistoryItem) => {
+  const handleImageClick = (item: HistoryItem, e: React.MouseEvent) => {
+    // Prevent click if a swipe is in progress or just completed
+    const timeSinceLastSwipe = Date.now() - lastSwipeTime.current
+    if (isSwiping.current || timeSinceLastSwipe < 300) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    
     if (onSelectImage) {
       // Call the callback to replace the active image with this one
       onSelectImage(item)
@@ -104,6 +145,14 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
   }
 
   const handleDeleteItem = async (e: React.MouseEvent, generationId: string) => {
+    // Prevent action if swipe just occurred
+    const timeSinceLastSwipe = Date.now() - lastSwipeTime.current
+    if (isSwiping.current || timeSinceLastSwipe < 300) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    
     e.stopPropagation()
     
     if (window.confirm('Are you sure you want to delete this generation?')) {
@@ -176,7 +225,7 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
           {/* Carousel container */}
           <div
             ref={carouselRef}
-            className="mx-8 overflow-hidden" // Add margin for arrow space
+            className="mx-8 overflow-hidden touch-pan-y" // Add margin for arrow space, allow vertical scrolling
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -185,8 +234,9 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
               {getCurrentPageItems().map((item) => (
                 <div
                   key={item.generation_id}
-                  className="group relative bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-300 cursor-pointer"
-                  onClick={() => handleImageClick(item)}
+                  className="group relative bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-300 cursor-pointer select-none touch-manipulation"
+                  onClick={(e) => handleImageClick(item, e)}
+                  style={{ touchAction: 'manipulation' }}
                 >
                   {/* Image/Video thumbnail */}
                   <div className="aspect-square relative overflow-hidden bg-gray-100">
@@ -232,14 +282,21 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                         </div>
                         
                         {/* Action icons on hover */}
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:transition-opacity">
                           {onTagImage && item.output_url && !isVideo(item.output_url) && (
                             <button
                               onClick={(e) => {
+                                // Prevent action if swipe just occurred
+                                const timeSinceLastSwipe = Date.now() - lastSwipeTime.current
+                                if (isSwiping.current || timeSinceLastSwipe < 300) {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  return
+                                }
                                 e.stopPropagation()
                                 onTagImage(item.output_url!)
                               }}
-                              className={`p-1 text-white rounded-full ${
+                              className={`p-1 text-white rounded-full touch-manipulation ${
                                 taggedImages?.has(item.output_url!)
                                   ? 'bg-green-600 hover:bg-green-700'
                                   : 'bg-gray-600 hover:bg-gray-700'
@@ -252,7 +309,7 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                           {onDeleteItem && (
                             <button
                               onClick={(e) => handleDeleteItem(e, item.generation_id)}
-                              className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
+                              className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700 touch-manipulation"
                               title="Delete this generation"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -265,10 +322,17 @@ export default function GenerationHistory({ refreshTrigger, userId, onSelectImag
                           ) : (
                             <button
                               onClick={(e) => {
+                                // Prevent action if swipe just occurred
+                                const timeSinceLastSwipe = Date.now() - lastSwipeTime.current
+                                if (isSwiping.current || timeSinceLastSwipe < 300) {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  return
+                                }
                                 e.stopPropagation()
                                 window.open(item.output_url, '_blank')
                               }}
-                              className="p-1 bg-black bg-opacity-50 text-white rounded hover:bg-opacity-70"
+                              className="p-1 bg-black bg-opacity-50 text-white rounded hover:bg-opacity-70 touch-manipulation"
                               title="Open in new tab"
                             >
                               <ExternalLink className="w-3 h-3" />
