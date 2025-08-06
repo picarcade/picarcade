@@ -805,11 +805,23 @@ class ReplicateGenerator(BaseGenerator):
             
             # Add model-specific parameters based on actual API schema
             if "google/veo" in model_name:
-                # Google Veo-3 on Replicate: {"prompt": string, "seed": integer (optional)}
-                # Only supports text-to-video with audio
+                # Google Veo-3 on Replicate: {"prompt": string, "seed": integer (optional), "image": string (optional)}
+                # Supports text-to-video with audio and image-to-video
                 seed = parameters.get("seed")
                 if seed is not None:
                     inputs["seed"] = seed
+                
+                # Add image input for image-to-video scenarios (Veo 3 Fast now supports this)
+                image = parameters.get("image") or parameters.get("uploaded_image") or parameters.get("first_frame_image")
+                if image:
+                    inputs["image"] = image
+                    print(f"[DEBUG] Veo-3 image input: {image[:50] if len(image) > 50 else image}")
+                
+                # Add resolution parameter if specified
+                resolution = parameters.get("resolution")
+                if resolution:
+                    inputs["resolution"] = resolution
+                    print(f"[DEBUG] Veo-3 resolution: {resolution}")
                     
             elif "minimax/hailuo-02" in model_name:
                 # MiniMax Hailuo-02: supports prompt, first_frame_image, duration, resolution, prompt_optimizer

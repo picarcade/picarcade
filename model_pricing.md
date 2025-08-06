@@ -24,7 +24,7 @@ This document provides a comprehensive breakdown of AI model costs used in the P
 |----------|-------------|----------|------|----------|---------------|-------|
 | **NEW_VIDEO** | `minimax/hailuo-02` | Replicate | $0.05/request | 6s | ❌ | Text-to-video (primary) |
 | **NEW_VIDEO_WITH_AUDIO** | `google/veo-3-fast` | Replicate | $0.08/request | Variable | ✅ | Text-to-video with audio |
-| **IMAGE_TO_VIDEO** | `gen4_turbo` | Runway | $0.50/request | 5s | ❌ | Image-to-video conversion (improved quality) |
+| **IMAGE_TO_VIDEO** | `minimax/hailuo-02` | Replicate | $0.05/request | 6s | ❌ | Image-to-video conversion |
 | **IMAGE_TO_VIDEO_WITH_AUDIO** | `google/veo-3-fast` | Replicate | $0.08/request | Variable | ✅ | Image-to-video with audio |
 | **EDIT_IMAGE_REF_TO_VIDEO** | `gen4_turbo` | Runway | $0.50/request | 5s | ❌ | Reference-based video (improved quality) |
 
