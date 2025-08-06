@@ -47,7 +47,7 @@ class ModelRouter:
                 "speed": 9,      # Very fast text-to-video
                 "quality": 8,
                 "cost": 2,       # Very cost-effective
-                "supports": ["generate_video", "generate_video_with_audio"]
+                "supports": ["generate_video", "generate_video_with_audio", "image_to_video"]
             },
             "gen3a_turbo": {
                 "type": "video",
