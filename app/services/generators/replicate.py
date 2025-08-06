@@ -871,9 +871,9 @@ class ReplicateGenerator(BaseGenerator):
                         raise ValueError("Video editing requires a video URI")
                 elif "runway_gen4_image" in model_name or parameters.get("type") == "text_to_image_with_references":
                     # This shouldn't happen since runway image models are routed to _generate_runway_image
-                    # But if it does, redirect to image generation
-                    print(f"[DEBUG] Warning: runway image model in video path - redirecting to image generation")
-                    return await self._generate_runway_image(prompt, parameters)
+                    # But if it does, we can't call async methods from sync_call, so we'll raise an error
+                    print(f"[DEBUG] Error: runway image model in video path - this should be handled at a higher level")
+                    raise ValueError("Runway image generation should not be called from video generation path")
                 else:
                     # Image-to-video with gen4-turbo
                     image_uri = parameters.get("image") or parameters.get("prompt_image") or parameters.get("first_frame_image")
