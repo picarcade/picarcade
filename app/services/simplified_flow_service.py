@@ -1105,19 +1105,17 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 else:
                     print(f"[DEBUG] SIMPLIFIED: No reference images found for EDIT_IMAGE_ADD_NEW")
         elif result.model_to_use == "runway_gen4_image":
-            print(f"[DEBUG] SIMPLIFIED: Setting up Runway parameters for {result.prompt_type.value}")
+            print(f"[DEBUG] SIMPLIFIED: Setting up Runway image parameters for replicate runwayml/gen4-image")
             print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
             
+            # For replicate runway, use different parameter names
             base_params.update({
-                "promptText": result.enhanced_prompt,
-                "ratio": "1920:1080",
-                "model": "gen4_image"
+                "prompt": result.enhanced_prompt,  # Use 'prompt' instead of 'promptText'
+                "aspect_ratio": "4:3",  # Use 'aspect_ratio' instead of 'ratio'
+                "model": "runway_gen4_image"  # Keep original model name for routing
             })
-            # Remove the generic prompt since Runway uses promptText
-            if "prompt" in base_params:
-                del base_params["prompt"]
             
-            print(f"[DEBUG] SIMPLIFIED: Base Runway params: {base_params}")
+            print(f"[DEBUG] SIMPLIFIED: Base Runway image params for replicate: {base_params}")
             
             # Add reference images if they exist in context
             if context and result.prompt_type.value in ["NEW_IMAGE_REF", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW"]:
@@ -1160,9 +1158,10 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                         print(f"[DEBUG] SIMPLIFIED: Added uploaded reference: reference_{i+1} -> {uploaded_url}")
                 
                 if reference_images:
-                    # For all Runway flows, use camelCase
-                    base_params["referenceImages"] = reference_images
-                    print(f"[DEBUG] SIMPLIFIED: Final Runway params with {len(reference_images)} reference images: {base_params}")
+                    # For replicate runway, keep both formats for compatibility
+                    base_params["referenceImages"] = reference_images  # camelCase for legacy
+                    base_params["reference_images"] = reference_images  # snake_case for replicate
+                    print(f"[DEBUG] SIMPLIFIED: Final Runway image params with {len(reference_images)} reference images: {base_params}")
                 else:
                     print(f"[DEBUG] SIMPLIFIED: No reference images found - generator will work without references")
         # Video model parameters

@@ -625,18 +625,13 @@ async def generate_content(
         })
         
         if uses_runway_references:
-            # Image generation with references - keep using runway generator for now
-            # TODO: migrate to flux-kontext or another reference-capable model
-            api_logger.debug("Using FRESH RunwayGenerator for runway references (image generation)")
-            generator = get_runway_generator()  # Create fresh instance!
+            # Image generation with references - now using replicate with runwayml/gen4-image
+            api_logger.debug("Using FRESH ReplicateGenerator for runway references via replicate")
+            generator = get_replicate_generator()  # Create fresh instance!
         elif configured_generator == "runway" or "runway" in selected_model or selected_model in ["gen3a_turbo", "gen4_turbo"]:
-            # Video generation - use replicate
-            if selected_model == "runway_gen4_image":
-                api_logger.debug("Using FRESH RunwayGenerator for image generation", extra={"model": selected_model, "configured_generator": configured_generator})
-                generator = get_runway_generator()  # Create fresh instance for image generation
-            else:
-                api_logger.debug("Using FRESH ReplicateGenerator for runway video models via replicate", extra={"model": selected_model, "configured_generator": configured_generator})
-                generator = get_replicate_generator()  # Create fresh instance for video models
+            # All runway models now use replicate
+            api_logger.debug("Using FRESH ReplicateGenerator for runway models via replicate", extra={"model": selected_model, "configured_generator": configured_generator})
+            generator = get_replicate_generator()  # Create fresh instance for all runway models
             
             # Configure for video editing generation (gen4_aleph)
             if selected_model == "gen4_aleph" and flow_result.prompt_type.value in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
