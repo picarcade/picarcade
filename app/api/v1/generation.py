@@ -583,8 +583,8 @@ async def generate_content(
                     "has_working_video": has_input_video
                 })
                 selected_model = "gen4_aleph"
-                configured_generator = "runway"
-                generator = get_runway_generator()
+                configured_generator = "replicate"  # Route runway models through replicate
+                generator = get_replicate_generator()
                 
             elif requires_audio:
                 # Audio requests: Use VEO-3-Fast (only model that supports audio)
@@ -625,11 +625,13 @@ async def generate_content(
         })
         
         if uses_runway_references:
-            api_logger.debug("Using FRESH RunwayGenerator due to runway references workflow")
-            generator = get_runway_generator()  # Create fresh instance!
+            # Image generation with references - now using replicate with runwayml/gen4-image
+            api_logger.debug("Using FRESH ReplicateGenerator for runway references via replicate")
+            generator = get_replicate_generator()  # Create fresh instance!
         elif configured_generator == "runway" or "runway" in selected_model or selected_model in ["gen3a_turbo", "gen4_turbo"]:
-            api_logger.debug("Using FRESH RunwayGenerator", extra={"model": selected_model, "configured_generator": configured_generator})
-            generator = get_runway_generator()  # Create fresh instance!
+            # All runway models now use replicate
+            api_logger.debug("Using FRESH ReplicateGenerator for runway models via replicate", extra={"model": selected_model, "configured_generator": configured_generator})
+            generator = get_replicate_generator()  # Create fresh instance for all runway models
             
             # Configure for video editing generation (gen4_aleph)
             if selected_model == "gen4_aleph" and flow_result.prompt_type.value in ["VIDEO_EDIT", "VIDEO_EDIT_REF"]:
@@ -742,9 +744,9 @@ async def generate_content(
                 parameters.pop("first_frame_image", None)
                 api_logger.debug("Hailuo-02 text-to-video mode", extra={"mode": "text-to-video"})
                 
-            elif selected_model == "gen3a_turbo" and configured_generator == "runway":
-                # Runway image-to-video configuration
-                api_logger.debug("Configuring Runway for image-to-video", extra={
+            elif selected_model == "gen3a_turbo" and "runway" in selected_model:
+                # Runway image-to-video configuration via replicate
+                api_logger.debug("Configuring Runway for image-to-video via replicate", extra={
                     "prompt": request.prompt,
                     "has_image": has_input_image
                 })
@@ -807,8 +809,8 @@ async def generate_content(
                                  for k, v in parameters.items()},
                 "generation_mode": "text-to-video"
             })
-        elif selected_model == "gen3a_turbo" and configured_generator == "runway":
-            api_logger.debug("Final Runway parameters", extra={
+        elif selected_model == "gen3a_turbo" and "runway" in selected_model:
+            api_logger.debug("Final Runway parameters via replicate", extra={
                 "all_parameters": {k: v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v 
                                  for k, v in parameters.items()},
                 "has_prompt_image": "prompt_image" in parameters,
