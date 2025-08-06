@@ -17,10 +17,30 @@ httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.DEBUG)
 
 class RunwayGenerator(BaseGenerator):
-    """Runway ML generator implementation"""
+    """
+    DEPRECATED: Runway ML generator implementation
+    
+    This generator is deprecated. Runway models are now handled via Replicate.
+    Use ReplicateGenerator with runway model names instead:
+    - "runwayml/gen4-turbo" for image-to-video
+    - "runwayml/gen4-aleph" for video editing
+    
+    This class remains for backward compatibility but will be removed in a future version.
+    """
     
     def __init__(self):
         super().__init__(settings.runway_api_key)
+        
+        # DEPRECATION WARNING
+        import warnings
+        warnings.warn(
+            "RunwayGenerator is deprecated. Runway models are now handled via ReplicateGenerator. "
+            "Use 'runwayml/gen4-turbo' or 'runwayml/gen4-aleph' with ReplicateGenerator instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        print("⚠️  WARNING: RunwayGenerator is DEPRECATED! Use ReplicateGenerator with runway models instead.")
+        logger.warning("RunwayGenerator is deprecated. Use ReplicateGenerator with runway model names instead.")
         
         # VERY OBVIOUS LOG TO CONFIRM WHEN GENERATOR IS INSTANTIATED
         print("🔥🔥🔥 RUNWAY GENERATOR __INIT__ CALLED - NEW INSTANCE CREATED! 🔥🔥🔥")

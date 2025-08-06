@@ -35,6 +35,12 @@ class ReplicateGenerator(BaseGenerator):
     def _extract_url(self, obj):
         if isinstance(obj, list):
             obj = obj[0]
+        
+        # Handle runway models that return objects with .url() method
+        if hasattr(obj, 'url') and callable(obj.url):
+            return obj.url()
+        
+        # Handle other models that have url attribute
         return getattr(obj, 'url', obj)
     
     @BaseGenerator._measure_time
@@ -836,12 +842,39 @@ class ReplicateGenerator(BaseGenerator):
                     print(f"[DEBUG] This should trigger IMAGE-TO-VIDEO generation")
                     
             elif "runway" in model_name:
-                # Legacy Runway parameters (if still needed)
-                inputs.update({
-                    "duration": parameters.get("duration", 5),
-                    "ratio": parameters.get("ratio", "1280:720"),
-                    "motion": parameters.get("motion", 3),
-                })
+                # Runway models via Replicate
+                if "aleph" in model_name or parameters.get("type") == "video_edit":
+                    # Video editing with gen4-aleph - requires existing video
+                    video_uri = parameters.get("videoUri") or parameters.get("video_uri") or parameters.get("current_working_video")
+                    if video_uri:
+                        inputs = {
+                            "video": video_uri,
+                            "prompt": prompt
+                        }
+                        model_name = "runwayml/gen4-aleph"
+                        print(f"[DEBUG] Using runway gen4-aleph for video editing: {video_uri[:50]}...")
+                    else:
+                        raise ValueError("Video editing requires a video URI")
+                elif "runway_gen4_image" in model_name or parameters.get("type") == "text_to_image_with_references":
+                    # Image generation with references should not reach here since we route it to runway generator
+                    # But if it does, fall back to appropriate behavior
+                    print(f"[DEBUG] Warning: runway_gen4_image routed to replicate - this should be handled by runway generator")
+                    # Fall through to default video generation logic
+                else:
+                    # Image-to-video with gen4-turbo
+                    image_uri = parameters.get("image") or parameters.get("prompt_image") or parameters.get("first_frame_image")
+                    if image_uri:
+                        inputs = {
+                            "image": image_uri,
+                            "prompt": prompt
+                        }
+                        model_name = "runwayml/gen4-turbo"
+                        print(f"[DEBUG] Using runway gen4-turbo for image-to-video: {image_uri[:50]}...")
+                    else:
+                        # Text-to-video (if no image provided)
+                        inputs = {"prompt": prompt}
+                        model_name = "runwayml/gen4-turbo"
+                        print(f"[DEBUG] Using runway gen4-turbo for text-to-video")
             
             print(f"[DEBUG] Replicate video generation with model: {model_name}")
             print(f"[DEBUG] Video generation inputs: {inputs}")
