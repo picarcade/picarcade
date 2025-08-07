@@ -797,11 +797,21 @@ class ReplicateGenerator(BaseGenerator):
             
             # Add model-specific parameters based on actual API schema
             if "google/veo" in model_name:
-                # Google Veo-3 on Replicate: {"prompt": string, "seed": integer (optional)}
-                # Only supports text-to-video with audio
+                # Google Veo-3 Fast now supports image inputs as start frames!
+                # Schema: {"prompt": string, "image": string (optional), "seed": integer (optional)}
+                
+                # Add image input if provided (for image-to-video scenarios)
+                image_input = parameters.get("image") or parameters.get("uploaded_image") or parameters.get("first_frame_image")
+                if image_input:
+                    inputs["image"] = image_input
+                    print(f"[DEBUG] Veo-3 Fast image input: {image_input[:50] if len(image_input) > 50 else image_input}")
+                    print(f"[DEBUG] This should trigger IMAGE-TO-VIDEO generation with Veo-3 Fast")
+                
+                # Add optional seed parameter
                 seed = parameters.get("seed")
                 if seed is not None:
                     inputs["seed"] = seed
+                    print(f"[DEBUG] Veo-3 Fast seed: {seed}")
                     
             elif "minimax/hailuo-02" in model_name:
                 # MiniMax Hailuo-02: supports prompt, first_frame_image, duration, resolution, prompt_optimizer
@@ -845,6 +855,12 @@ class ReplicateGenerator(BaseGenerator):
             
             print(f"[DEBUG] Replicate video generation with model: {model_name}")
             print(f"[DEBUG] Video generation inputs: {inputs}")
+            
+            # Log image-to-video detection
+            if inputs.get("image") or inputs.get("first_frame_image"):
+                print(f"[DEBUG] 🎬 IMAGE-TO-VIDEO DETECTED - Using start frame image!")
+                if "google/veo" in model_name:
+                    print(f"[DEBUG] 🚀 VEO-3-FAST with image input - this is the NEW feature!")
             
             print(f"[DEBUG] About to call replicate.run() with model: {model_name}")
             print(f"[DEBUG] Replicate API key configured: {bool(self.api_key)}")

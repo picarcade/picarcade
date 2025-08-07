@@ -35,11 +35,13 @@ model_routing:
       IMAGE_TO_VIDEO:
         model: "gen4_turbo"
         generator: "runway"
-        # No fallback - Runway is primary for image-to-video (bypass Hailuo-02 safety restrictions)
+        fallback_model: "google/veo-3-fast"
+        # Runway is primary for image-to-video. Veo-3-Fast available as fallback (with new image input support)
       IMAGE_TO_VIDEO_WITH_AUDIO:
-        model: "gen4_turbo"
-        generator: "runway"
-        # VEO-3-Fast cannot accept image inputs, so use Runway for all image-to-video regardless of audio
+        model: "google/veo-3-fast"
+        generator: "replicate"
+        fallback_model: "gen4_turbo"
+        # VEO-3-Fast supports both image inputs AND audio generation - use only when audio is explicitly requested
       EDIT_IMAGE_REF_TO_VIDEO:
         model: "gen4_turbo"
         generator: "runway"
