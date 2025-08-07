@@ -335,6 +335,9 @@ const PerplexityInterface = () => {
         const data = await response.json();
         console.log('[DEBUG] Witty messages received:', data.witty_messages);
         return data.witty_messages || [];
+      } else if (response.status === 402) {
+        console.log('[DEBUG] Insufficient XP for witty messages, using fallback');
+        // Don't show error for witty messages XP shortage, just use fallback
       } else {
         console.error('[DEBUG] Witty messages API error:', response.status, response.statusText);
       }

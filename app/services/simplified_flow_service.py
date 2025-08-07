@@ -715,10 +715,24 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             else:
                 print(f"[DEBUG] SIMPLIFIED: Trusting LLM classification: {llm_type}")
                 
+                # CRITICAL: Check for audio keywords that LLM might have missed
+                audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                                 "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                                 "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                
+                # Override LLM if audio keywords detected but not classified correctly
+                if has_audio_intent and llm_type == "IMAGE_TO_VIDEO" and active_image:
+                    print(f"[OVERRIDE] SIMPLIFIED: Audio keyword detected in '{user_prompt}' - correcting IMAGE_TO_VIDEO → IMAGE_TO_VIDEO_WITH_AUDIO")
+                    llm_type = "IMAGE_TO_VIDEO_WITH_AUDIO"
+                    reasoning += f" (Corrected to add audio support due to detected keywords)"
+                elif has_audio_intent and llm_type == "NEW_VIDEO" and not active_image:
+                    print(f"[OVERRIDE] SIMPLIFIED: Audio keyword detected in '{user_prompt}' - correcting NEW_VIDEO → NEW_VIDEO_WITH_AUDIO")
+                    llm_type = "NEW_VIDEO_WITH_AUDIO"
+                    reasoning += f" (Corrected to add audio support due to detected keywords)"
+                
                 # VEO-3-Fast now supports image inputs, so no correction needed
                 # Note: Previously VEO-3-Fast couldn't accept image inputs, but this has been updated
-                
-                # CSV rules are NOT enforced - LLM decision is trusted
                 
                 # If we did a CSV fallback to EDIT_IMAGE_REF, ensure proper prompt format
                 if llm_type == "EDIT_IMAGE_REF" and "CSV fallback" in reasoning:
@@ -928,8 +942,18 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             # Check for audio intent in video requests
             audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
                              "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
-                             "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
+                             "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams", "shouting"]
             has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+            
+            # Debug audio intent detection
+            print(f"[DEBUG] CSV Audio: user_prompt.lower()='{user_prompt.lower()}'")
+            print(f"[DEBUG] CSV Audio: audio_keywords={audio_keywords}")
+            print(f"[DEBUG] CSV Audio: has_audio_intent={has_audio_intent}")
+            if has_audio_intent:
+                matching_audio_keywords = [kw for kw in audio_keywords if kw in user_prompt.lower()]
+                print(f"[DEBUG] CSV Audio: matching audio keywords={matching_audio_keywords}")
+            else:
+                print(f"[DEBUG] CSV Audio: NO AUDIO KEYWORDS FOUND in '{user_prompt}'!")
             
             # VIDEO CSV RULES:
             if not active_image and not uploaded_image and not referenced_image:

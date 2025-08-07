@@ -494,7 +494,8 @@ async def generate_content(
                 parameters["reference_images"] = runway_reference_images
                 parameters["type"] = "text_to_image_with_references"
         
-
+        # Add uploaded image as base if available (for face modification scenarios)
+        if request.uploaded_images:
             parameters["uploaded_image"] = request.uploaded_images[0]
             image_source = f"uploaded_image:{request.uploaded_images[0]}"
             api_logger.debug("Using uploaded image as base for face modification", extra={"image": request.uploaded_images[0]})
@@ -571,7 +572,10 @@ async def generate_content(
         has_input_video = bool(current_working_video)
         
         # Audio detection - check for audio keywords in prompt or explicit audio request
-        audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", "lyrics", "melody", "vocal", "narration", "dialogue", "conversation"]
+        audio_keywords = ["singing", "sing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
+                         "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
+                         "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams", "shouting",
+                         "narration", "dialogue", "conversation"]
         requires_audio = (flow_result.prompt_type.value in ["NEW_VIDEO_WITH_AUDIO", "IMAGE_TO_VIDEO_WITH_AUDIO"] or 
                          any(keyword in request.prompt.lower() for keyword in audio_keywords)) if is_video_generation else False
         
@@ -595,14 +599,14 @@ async def generate_content(
                 selected_model = "google/veo-3-fast"
                 configured_generator = "replicate"
             elif has_input_image:
-                # Image-to-video: Use Runway directly (bypass Hailuo-02 safety restrictions)
-                api_logger.debug("Image-to-video detected: routing directly to Runway", extra={
+                # Image-to-video: Use Runway via Replicate (bypass Hailuo-02 safety restrictions)
+                api_logger.debug("Image-to-video detected: routing to Runway via Replicate", extra={
                     "working_image": current_working_image,
                     "uploaded_images": len(request.uploaded_images) if request.uploaded_images else 0,
                     "reason": "bypassing_hailuo_safety_restrictions"
                 })
-                selected_model = "gen4_turbo"
-                configured_generator = "runway"
+                selected_model = "runwayml/gen4-turbo"
+                configured_generator = "replicate"
             else:
                 # Text-to-video (no audio): Use Minimax Hailuo-02 as primary, VEO-3-Fast as fallback
                 api_logger.debug("Text-to-video detected: routing to Minimax Hailuo-02", extra={
@@ -779,12 +783,32 @@ async def generate_content(
                 parameters.pop("first_frame_image", None)
                 
             elif selected_model == "google/veo-3-fast":
-                api_logger.debug("Configuring VEO-3-Fast for text-to-video", extra={"prompt": request.prompt})
-                # VEO-3-Fast uses "prompt" parameter instead of "model"
+                # VEO-3-Fast supports both text-to-video AND image-to-video with audio
                 parameters["prompt"] = request.prompt
-                # Remove any image parameters for text-to-video
-                parameters.pop("image", None)
-                parameters.pop("uploaded_image", None)
+                
+                # Check if we have any input image (working image or uploaded)
+                if current_working_image:
+                    api_logger.debug("Configuring VEO-3-Fast for image-to-video with audio", extra={
+                        "prompt": request.prompt,
+                        "working_image": current_working_image[:50] + "..." if current_working_image else None
+                    })
+                    # VEO-3-Fast image-to-video with audio mode
+                    parameters["image"] = current_working_image
+                    parameters["uploaded_image"] = current_working_image  # Backup parameter name
+                elif request.uploaded_images and len(request.uploaded_images) > 0:
+                    api_logger.debug("Configuring VEO-3-Fast for image-to-video with audio (uploaded)", extra={
+                        "prompt": request.prompt,
+                        "uploaded_image": request.uploaded_images[0][:50] + "..."
+                    })
+                    # VEO-3-Fast image-to-video with audio mode (uploaded image)
+                    parameters["image"] = request.uploaded_images[0]
+                    parameters["uploaded_image"] = request.uploaded_images[0]
+                else:
+                    api_logger.debug("Configuring VEO-3-Fast for text-to-video with audio", extra={"prompt": request.prompt})
+                    # VEO-3-Fast text-to-video with audio mode (no image)
+                    # Remove any image parameters for text-to-video
+                    parameters.pop("image", None)
+                    parameters.pop("uploaded_image", None)
                 
             # For video models that need input images, ensure the working image is passed
             elif "video" in selected_model and current_working_image and flow_result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:

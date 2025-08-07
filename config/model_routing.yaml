@@ -33,27 +33,27 @@ model_routing:
         generator: "replicate"
         # No fallback - VEO-3-Fast is the only option for audio
       IMAGE_TO_VIDEO:
-        model: "gen4_turbo"
-        generator: "runway"
+        model: "runwayml/gen4-turbo"
+        generator: "replicate"
         fallback_model: "google/veo-3-fast"
-        # Runway is primary for image-to-video. Veo-3-Fast available as fallback (with new image input support)
+        # Runway via Replicate is primary for image-to-video. Veo-3-Fast available as fallback
       IMAGE_TO_VIDEO_WITH_AUDIO:
         model: "google/veo-3-fast"
         generator: "replicate"
-        fallback_model: "gen4_turbo"
+        fallback_model: "runwayml/gen4-turbo"
         # VEO-3-Fast supports both image inputs AND audio generation - use only when audio is explicitly requested
       EDIT_IMAGE_REF_TO_VIDEO:
-        model: "gen4_turbo"
-        generator: "runway"
-        # No fallback - Runway is primary for image-to-video
+        model: "runwayml/gen4-turbo"
+        generator: "replicate"
+        # No fallback - Runway via Replicate is primary for image-to-video
       VIDEO_EDIT:
-        model: "gen4_aleph"
-        generator: "runway"
-        # No fallback - gen4_aleph is only model for video editing
+        model: "runwayml/gen4-aleph"
+        generator: "replicate"
+        # No fallback - gen4_aleph via Replicate is only model for video editing
       VIDEO_EDIT_REF:
-        model: "gen4_aleph"
-        generator: "runway"
-        # No fallback - gen4_aleph is only model for video editing with references
+        model: "runwayml/gen4-aleph"
+        generator: "replicate"
+        # No fallback - gen4_aleph via Replicate is only model for video editing with references
   
 
 

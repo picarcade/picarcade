@@ -111,7 +111,10 @@ export default function ShareButton({
   return (
     <div className="relative">
       <button
-        onClick={() => setShowShareMenu(!showShareMenu)}
+        onClick={(e) => {
+          e.stopPropagation()
+          setShowShareMenu(!showShareMenu)
+        }}
         className={`flex items-center gap-2 ${buttonSizeClasses[size]} bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors ${className}`}
         title="Share"
       >

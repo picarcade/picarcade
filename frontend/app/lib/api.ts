@@ -56,13 +56,10 @@ export const generateContent = async (request: GenerationRequest): Promise<Gener
     return response.data
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      // Handle insufficient credits by redirecting to subscriptions
-      if (error.response?.status === 402 && error.response?.data?.redirect_to_subscriptions) {
-        // Use window.location to redirect (works without router context)
-        if (typeof window !== 'undefined') {
-          window.location.href = '/subscriptions';
-        }
-        throw new Error(error.response?.data?.message || 'Insufficient credits')
+      // Handle insufficient XP/credits (402 Payment Required)
+      if (error.response?.status === 402) {
+        // Show user-friendly message for insufficient XP
+        throw new Error('Level up to create more')
       }
       throw new Error(error.response?.data?.detail || error.message)
     }
