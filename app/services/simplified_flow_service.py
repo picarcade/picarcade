@@ -43,7 +43,7 @@ class PromptType(Enum):
     NEW_VIDEO = "NEW_VIDEO"
     NEW_VIDEO_WITH_AUDIO = "NEW_VIDEO_WITH_AUDIO"  # New: Text-to-video with audio (Veo 3) - no working image
     IMAGE_TO_VIDEO = "IMAGE_TO_VIDEO"
-    IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # Deprecated: VEO-3-Fast cannot accept image inputs
+    IMAGE_TO_VIDEO_WITH_AUDIO = "IMAGE_TO_VIDEO_WITH_AUDIO"  # Image-to-video with audio using Veo 3 Fast
     EDIT_IMAGE_REF_TO_VIDEO = "EDIT_IMAGE_REF_TO_VIDEO"
     # New video editing flows for gen4_aleph
     VIDEO_EDIT = "VIDEO_EDIT"  # Edit working video with prompt
@@ -431,8 +431,8 @@ CRITICAL: If the video involves people communicating, conversing, or any scenari
 
 1. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: NEW_VIDEO_WITH_AUDIO, Model: Veo 3 (text-to-video with audio)
 2. Active Image=NO, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: NEW_VIDEO, Model: MiniMax (text-to-video)
-3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: Runway (image-to-video - VEO-3-Fast cannot accept image inputs)
-4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: Runway (image-to-video)
+3. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITH AUDIO INTENT → Type: IMAGE_TO_VIDEO_WITH_AUDIO, Model: Veo 3 Fast (image-to-video with audio)
+4. Active Image=YES, Uploaded Image=NO, Referenced Image=NO WITHOUT AUDIO INTENT → Type: IMAGE_TO_VIDEO, Model: MiniMax (image-to-video)
 5. Active Image=YES AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: Runway (reference-based video)
 6. Active Image=NO AND (Uploaded Image=YES OR Referenced Image=YES) → Type: EDIT_IMAGE_REF_TO_VIDEO, Model: Runway (reference-based video)
 
@@ -506,8 +506,8 @@ VIDEO ENHANCEMENT RULES:
    - Dialog/Background Noise (optional): What characters should say and when, environmental sounds
    - Subtitles and Language: Whether to include subtitles, language preferences affect cultural context
 
-2. IMAGE_TO_VIDEO: No specific enhancement - use original prompt for image animation (Runway - no audio)
-3. IMAGE_TO_VIDEO_WITH_AUDIO: No specific enhancement - use original prompt for image animation with audio (Veo 3 - audio enabled)
+2. IMAGE_TO_VIDEO: No specific enhancement - use original prompt for image animation (MiniMax - no audio)
+3. IMAGE_TO_VIDEO_WITH_AUDIO: No specific enhancement - use original prompt for image animation with audio (Veo 3 Fast - audio enabled)
 4. EDIT_IMAGE_REF_TO_VIDEO: Use Kontext to update the image first, then send to Runway for video generation
 
 IMAGE ENHANCEMENT RULES:
@@ -715,11 +715,8 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
             else:
                 print(f"[DEBUG] SIMPLIFIED: Trusting LLM classification: {llm_type}")
                 
-                # Special correction: VEO-3-Fast cannot accept image inputs
-                if llm_type == "IMAGE_TO_VIDEO_WITH_AUDIO" and active_image:
-                    print(f"[DEBUG] SIMPLIFIED: Correcting IMAGE_TO_VIDEO_WITH_AUDIO to IMAGE_TO_VIDEO - VEO-3-Fast cannot accept image inputs")
-                    llm_type = "IMAGE_TO_VIDEO"
-                    reasoning += " (Auto-corrected: VEO-3-Fast cannot accept image inputs, using Runway instead)"
+                # VEO-3-Fast now supports image inputs, so no correction needed
+                # Note: Previously VEO-3-Fast couldn't accept image inputs, but this has been updated
                 
                 # CSV rules are NOT enforced - LLM decision is trusted
                 
@@ -829,9 +826,12 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                     audio_keywords = ["singing", "song", "music", "audio", "sound", "voice", "speak", "talk", 
                                      "lyrics", "melody", "chorus", "verse", "tune", "rhythm", "beat", "vocal", "microphone",
                                      "saying", "says", "said", "tells", "telling", "announces", "whispers", "shouts", "screams"]
-                # VEO-3-Fast cannot accept image inputs, so always use IMAGE_TO_VIDEO for image-to-video
-                # regardless of audio intent - Runway will handle it
-                return ("IMAGE_TO_VIDEO", user_prompt, "Fallback: Image to video conversion (Runway - VEO-3-Fast cannot accept image inputs)")
+                # Check for audio intent to decide between models
+                has_audio_intent = any(keyword in user_prompt.lower() for keyword in audio_keywords)
+                if has_audio_intent:
+                    return ("IMAGE_TO_VIDEO_WITH_AUDIO", user_prompt, "Fallback: Image to video conversion with audio (Veo 3 Fast)")
+                else:
+                    return ("IMAGE_TO_VIDEO", user_prompt, "Fallback: Image to video conversion (MiniMax)")
             else:
                 # Any combination with references = EDIT_IMAGE_REF_TO_VIDEO
                 return ("EDIT_IMAGE_REF_TO_VIDEO", user_prompt, "Fallback: Video generation with image references")
@@ -939,9 +939,9 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 else:
                     return "NEW_VIDEO"  # MiniMax (text-to-video)
             elif active_image and not uploaded_image and not referenced_image:
-                # Has working image - MiniMax for all scenarios
+                # Has working image - choose model based on audio intent
                 if has_audio_intent:
-                    return "IMAGE_TO_VIDEO_WITH_AUDIO"  # MiniMax (image-to-video with audio)
+                    return "IMAGE_TO_VIDEO_WITH_AUDIO"  # Veo 3 Fast (image-to-video with audio)
                 else:
                     return "IMAGE_TO_VIDEO"  # MiniMax (image-to-video)
             else:
@@ -997,7 +997,7 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "NEW_VIDEO": "minimax/video-01",
                 "NEW_VIDEO_WITH_AUDIO": "google/veo-3",
                 "IMAGE_TO_VIDEO": "minimax/video-01",
-                "IMAGE_TO_VIDEO_WITH_AUDIO": "google/veo-3",
+                "IMAGE_TO_VIDEO_WITH_AUDIO": "google/veo-3-fast",
                 "EDIT_IMAGE_REF_TO_VIDEO": "minimax/video-01"
             }
             return fallback_mapping.get(prompt_type, "black-forest-labs/flux-1.1-pro")
@@ -1105,19 +1105,17 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 else:
                     print(f"[DEBUG] SIMPLIFIED: No reference images found for EDIT_IMAGE_ADD_NEW")
         elif result.model_to_use == "runway_gen4_image":
-            print(f"[DEBUG] SIMPLIFIED: Setting up Runway parameters for {result.prompt_type.value}")
+            print(f"[DEBUG] SIMPLIFIED: Setting up Runway image parameters for replicate runwayml/gen4-image")
             print(f"[DEBUG] SIMPLIFIED: Context received: {context}")
             
+            # For replicate runway, use different parameter names
             base_params.update({
-                "promptText": result.enhanced_prompt,
-                "ratio": "1920:1080",
-                "model": "gen4_image"
+                "prompt": result.enhanced_prompt,  # Use 'prompt' instead of 'promptText'
+                "aspect_ratio": "4:3",  # Use 'aspect_ratio' instead of 'ratio'
+                "model": "runway_gen4_image"  # Keep original model name for routing
             })
-            # Remove the generic prompt since Runway uses promptText
-            if "prompt" in base_params:
-                del base_params["prompt"]
             
-            print(f"[DEBUG] SIMPLIFIED: Base Runway params: {base_params}")
+            print(f"[DEBUG] SIMPLIFIED: Base Runway image params for replicate: {base_params}")
             
             # Add reference images if they exist in context
             if context and result.prompt_type.value in ["NEW_IMAGE_REF", "EDIT_IMAGE_REF", "EDIT_IMAGE_ADD_NEW"]:
@@ -1160,9 +1158,10 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                         print(f"[DEBUG] SIMPLIFIED: Added uploaded reference: reference_{i+1} -> {uploaded_url}")
                 
                 if reference_images:
-                    # For all Runway flows, use camelCase
-                    base_params["referenceImages"] = reference_images
-                    print(f"[DEBUG] SIMPLIFIED: Final Runway params with {len(reference_images)} reference images: {base_params}")
+                    # For replicate runway, keep both formats for compatibility
+                    base_params["referenceImages"] = reference_images  # camelCase for legacy
+                    base_params["reference_images"] = reference_images  # snake_case for replicate
+                    print(f"[DEBUG] SIMPLIFIED: Final Runway image params with {len(reference_images)} reference images: {base_params}")
                 else:
                     print(f"[DEBUG] SIMPLIFIED: No reference images found - generator will work without references")
         # Video model parameters
@@ -1173,6 +1172,19 @@ IMPORTANT: Return ONLY the JSON object above. Do not add any extra analysis, exp
                 "fps": 24,
                 "enhance_prompt": True,
                 "generate_audio": True  # VEO3 native audio generation
+            })
+            
+            # Add image input for image-to-video scenarios
+            if result.prompt_type.value in ["IMAGE_TO_VIDEO", "IMAGE_TO_VIDEO_WITH_AUDIO", "EDIT_IMAGE_REF_TO_VIDEO"]:
+                # These will be populated with actual image URLs by the API layer
+                base_params["requires_image_input"] = True
+        elif result.model_to_use in ["google/veo-3", "google/veo-3-fast"]:
+            # VEO-3 and VEO-3-Fast support text-to-video and image-to-video with native audio generation
+            base_params.update({
+                "duration_seconds": 8,  # 8 seconds for VEO models
+                "fps": 24,
+                "enhance_prompt": True,
+                "generate_audio": True  # VEO native audio generation
             })
             
             # Add image input for image-to-video scenarios

@@ -35,6 +35,12 @@ class ReplicateGenerator(BaseGenerator):
     def _extract_url(self, obj):
         if isinstance(obj, list):
             obj = obj[0]
+        
+        # Handle runway models that return objects with .url() method
+        if hasattr(obj, 'url') and callable(obj.url):
+            return obj.url()
+        
+        # Handle other models that have url attribute
         return getattr(obj, 'url', obj)
     
     @BaseGenerator._measure_time
@@ -85,6 +91,8 @@ class ReplicateGenerator(BaseGenerator):
                 result = await self._generate_flux_kontext_max(prompt, parameters)
             elif "flux" in model_name:
                 result = await self._generate_flux(prompt, parameters)
+            elif model_name == "runway_gen4_image" or model_name == "runwayml/gen4-image" or parameters.get("type") == "text_to_image_with_references":
+                result = await self._generate_runway_image(prompt, parameters)
             elif "google/veo" in model_name or "runway" in model_name or "minimax/" in model_name:
                 result = await self._generate_video(prompt, parameters)
             else:
@@ -798,13 +806,13 @@ class ReplicateGenerator(BaseGenerator):
             # Add model-specific parameters based on actual API schema
             if "google/veo" in model_name:
                 # Google Veo-3 Fast now supports image inputs as start frames!
-                # Schema: {"prompt": string, "image": string (optional), "seed": integer (optional)}
+                # Schema: {"prompt": string, "image": string (optional), "seed": integer (optional), "resolution": string (optional)}
                 
-                # Add image input if provided (for image-to-video scenarios)
-                image_input = parameters.get("image") or parameters.get("uploaded_image") or parameters.get("first_frame_image")
-                if image_input:
-                    inputs["image"] = image_input
-                    print(f"[DEBUG] Veo-3 Fast image input: {image_input[:50] if len(image_input) > 50 else image_input}")
+                # Add image input for image-to-video scenarios (Veo 3 Fast now supports this)
+                image = parameters.get("image") or parameters.get("uploaded_image") or parameters.get("first_frame_image")
+                if image:
+                    inputs["image"] = image
+                    print(f"[DEBUG] Veo-3 Fast image input: {image[:50] if len(image) > 50 else image}")
                     print(f"[DEBUG] This should trigger IMAGE-TO-VIDEO generation with Veo-3 Fast")
                 
                 # Add optional seed parameter
@@ -812,6 +820,12 @@ class ReplicateGenerator(BaseGenerator):
                 if seed is not None:
                     inputs["seed"] = seed
                     print(f"[DEBUG] Veo-3 Fast seed: {seed}")
+                
+                # Add resolution parameter if specified
+                resolution = parameters.get("resolution")
+                if resolution:
+                    inputs["resolution"] = resolution
+                    print(f"[DEBUG] Veo-3 resolution: {resolution}")
                     
             elif "minimax/hailuo-02" in model_name:
                 # MiniMax Hailuo-02: supports prompt, first_frame_image, duration, resolution, prompt_optimizer
@@ -846,12 +860,39 @@ class ReplicateGenerator(BaseGenerator):
                     print(f"[DEBUG] This should trigger IMAGE-TO-VIDEO generation")
                     
             elif "runway" in model_name:
-                # Legacy Runway parameters (if still needed)
-                inputs.update({
-                    "duration": parameters.get("duration", 5),
-                    "ratio": parameters.get("ratio", "1280:720"),
-                    "motion": parameters.get("motion", 3),
-                })
+                # Runway models via Replicate
+                if "aleph" in model_name or parameters.get("type") == "video_edit":
+                    # Video editing with gen4-aleph - requires existing video
+                    video_uri = parameters.get("videoUri") or parameters.get("video_uri") or parameters.get("current_working_video")
+                    if video_uri:
+                        inputs = {
+                            "video": video_uri,
+                            "prompt": prompt
+                        }
+                        model_name = "runwayml/gen4-aleph"
+                        print(f"[DEBUG] Using runway gen4-aleph for video editing: {video_uri[:50]}...")
+                    else:
+                        raise ValueError("Video editing requires a video URI")
+                elif "runway_gen4_image" in model_name or parameters.get("type") == "text_to_image_with_references":
+                    # This shouldn't happen since runway image models are routed to _generate_runway_image
+                    # But if it does, we can't call async methods from sync_call, so we'll raise an error
+                    print(f"[DEBUG] Error: runway image model in video path - this should be handled at a higher level")
+                    raise ValueError("Runway image generation should not be called from video generation path")
+                else:
+                    # Image-to-video with gen4-turbo
+                    image_uri = parameters.get("image") or parameters.get("prompt_image") or parameters.get("first_frame_image")
+                    if image_uri:
+                        inputs = {
+                            "image": image_uri,
+                            "prompt": prompt
+                        }
+                        model_name = "runwayml/gen4-turbo"
+                        print(f"[DEBUG] Using runway gen4-turbo for image-to-video: {image_uri[:50]}...")
+                    else:
+                        # Text-to-video (if no image provided)
+                        inputs = {"prompt": prompt}
+                        model_name = "runwayml/gen4-turbo"
+                        print(f"[DEBUG] Using runway gen4-turbo for text-to-video")
             
             print(f"[DEBUG] Replicate video generation with model: {model_name}")
             print(f"[DEBUG] Video generation inputs: {inputs}")
@@ -907,6 +948,93 @@ class ReplicateGenerator(BaseGenerator):
                     "generation_type": "video"
                 }
             }
+        return await asyncio.to_thread(sync_call)
+
+    async def _generate_runway_image(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate image using Runway gen4-image via Replicate with reference images"""
+        def sync_call():
+            print(f"[DEBUG] Runway image generation via replicate")
+            
+            # Build inputs for runwayml/gen4-image
+            inputs = {
+                "prompt": prompt,
+            }
+            
+            # Add aspect ratio if provided
+            aspect_ratio = parameters.get("aspect_ratio") or parameters.get("ratio")
+            if aspect_ratio:
+                inputs["aspect_ratio"] = aspect_ratio
+                print(f"[DEBUG] Runway image aspect_ratio: {aspect_ratio}")
+            
+            # Handle reference images
+            reference_images = []
+            reference_tags = []
+            
+            # Get reference images from various parameter sources
+            refs_camel = parameters.get("referenceImages", [])
+            refs_snake = parameters.get("reference_images", [])
+            
+            # Combine reference sources
+            all_refs = refs_camel + refs_snake
+            
+            for ref in all_refs:
+                if isinstance(ref, dict):
+                    # Extract URI and tag from reference object
+                    uri = ref.get("uri") or ref.get("url")
+                    tag = ref.get("tag") or ref.get("name", "reference")
+                    if uri:
+                        reference_images.append(uri)
+                        reference_tags.append(tag)
+                        print(f"[DEBUG] Added reference: {tag} -> {uri[:50]}...")
+                elif isinstance(ref, str):
+                    # Direct URI
+                    reference_images.append(ref)
+                    reference_tags.append(f"ref_{len(reference_tags)}")
+                    print(f"[DEBUG] Added reference URI: {ref[:50]}...")
+            
+            # Add reference images and tags to inputs if we have them
+            if reference_images:
+                inputs["reference_images"] = reference_images
+                inputs["reference_tags"] = reference_tags
+                print(f"[DEBUG] Runway image with {len(reference_images)} reference images")
+                print(f"[DEBUG] Reference tags: {reference_tags}")
+            
+            # Use runwayml/gen4-image model
+            model_name = "runwayml/gen4-image"
+            
+            print(f"[DEBUG] Calling replicate.run() for runway image generation...")
+            print(f"[DEBUG] Model: {model_name}")
+            print(f"[DEBUG] Inputs: {inputs}")
+            
+            try:
+                # Call replicate.run() for runway image generation
+                output = replicate.run(model_name, input=inputs)
+                
+                print(f"[DEBUG] Runway image generation completed successfully")
+                print(f"[DEBUG] Raw output type: {type(output)}")
+                print(f"[DEBUG] Raw output content: {output}")
+                
+            except Exception as e:
+                print(f"[ERROR] Runway image generation failed: {str(e)}")
+                print(f"[ERROR] Exception type: {type(e)}")
+                import traceback
+                print(f"[ERROR] Full traceback: {traceback.format_exc()}")
+                raise
+            
+            # Extract the image URL
+            image_url = self._extract_url(output) if output else None
+            print(f"[DEBUG] Extracted image URL: {image_url}")
+            
+            return {
+                "output_url": image_url,
+                "metadata": {
+                    "model_version": model_name,
+                    "inputs": inputs,
+                    "generation_type": "image_with_references",
+                    "reference_count": len(reference_images)
+                }
+            }
+        
         return await asyncio.to_thread(sync_call)
 
     async def _generate_other(self, prompt: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
