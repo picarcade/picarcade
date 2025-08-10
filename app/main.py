@@ -68,9 +68,9 @@ app.add_middleware(
         "https://picarcade.ai",  # Production domain
         "https://www.picarcade.ai",  # Production domain with www
         "https://picarcade-frontend.vercel.app",  # Your specific frontend
-        "https://picarcade-frontend-68ol897kk-jamesskelton-nexefys-projects.vercel.app",  # Latest deployment with auth fix
-        "*"  # Allow all origins for testing (remove in production)
+        "https://picarcade-frontend-68ol897kk-jamesskelton-nexefys-projects.vercel.app"  # Latest deployment with auth fix
     ],
+    allow_origin_regex=r"https://.*\\.vercel\\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
